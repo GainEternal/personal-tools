@@ -4,6 +4,7 @@
 
   const els = {
     mode: document.getElementById('mode'),
+    orbitObject: document.getElementById('orbitObject'),
     altitude: document.getElementById('altitude'),
     initialSpeed: document.getElementById('initialSpeed'),
     direction: document.getElementById('direction'),
@@ -33,24 +34,20 @@
     earth: {
       radius: 6371,
       mu: 398600.4418,
-      name: 'Earth',
       atmosphere: 100,
       defaultAltitude: 400,
       defaultSpeed: 7.67,
       baseStep: 4,
-      bodyColor: '#4fa3ff',
       glowColor: 'rgba(79,163,255,.28)',
       scaleLabel: 'Altitude'
     },
     sun: {
       radius: 696340,
       mu: 132712440018,
-      name: 'Sun',
       atmosphere: 0,
       defaultAltitude: 148901530,
       defaultSpeed: 29.78,
       baseStep: 9000,
-      bodyColor: '#ffc55c',
       glowColor: 'rgba(255,197,92,.28)',
       scaleLabel: 'Distance from surface'
     }
@@ -83,8 +80,7 @@
     crashed: false,
     lastFrame: performance.now(),
     camera: { yaw: -0.55, pitch: 0.5, zoom: 1 },
-    pointer: { down: false, x: 0, y: 0 },
-    followOffset: { x: 0, y: 0, z: 0 }
+    pointer: { down: false, x: 0, y: 0 }
   };
 
   const vec = {
@@ -167,7 +163,10 @@
     let pos = { ...state.pos };
     let vel = { ...state.vel };
     const b = body();
-    const orbitalPeriodGuess = 2 * Math.PI * Math.sqrt(Math.pow(Math.max(vec.mag(pos), b.radius + 1), 3) / Math.max(1, b.mu * Math.max(gravityMultiplier(), .001)));
+    const orbitalPeriodGuess = 2 * Math.PI * Math.sqrt(
+      Math.pow(Math.max(vec.mag(pos), b.radius + 1), 3) /
+      Math.max(1, b.mu * Math.max(gravityMultiplier(), .001))
+    );
     const total = Math.min(orbitalPeriodGuess * 1.25, state.bodyKey === 'earth' ? 120000 : 50000000);
     const steps = 700;
     const dt = Math.max(b.baseStep, total / steps);
@@ -204,7 +203,6 @@
     const periapsis = h2 / (mu * (1 + e));
     if (state.bodyKey === 'earth' && periapsis - b.radius < b.atmosphere) return 'Reentering';
     if (e < 0.03) return 'Circular';
-    if (Math.abs(state.vel.x) > Math.abs(state.vel.y) * 2 && v < Math.sqrt(mu / r) * .65) return 'Falling';
     return 'Elliptical';
   }
 
@@ -311,11 +309,10 @@
     const cp = Math.cos(state.camera.pitch), sp = Math.sin(state.camera.pitch);
     const x1 = cy * p.x - sy * p.y;
     const y1 = sy * p.x + cy * p.y;
-    const z1 = p.z;
     return {
       x: x1,
-      y: cp * y1 - sp * z1,
-      z: sp * y1 + cp * z1
+      y: cp * y1 - sp * p.z,
+      z: sp * y1 + cp * p.z
     };
   }
 
@@ -352,11 +349,10 @@
     ctx.lineWidth = lineWidth;
     ctx.setLineDash(dash);
     ctx.beginPath();
-    let started = false;
-    points.forEach((p) => {
-      const q = project(p, width, height);
-      if (!started) { ctx.moveTo(q.x, q.y); started = true; }
-      else ctx.lineTo(q.x, q.y);
+    points.forEach((point, index) => {
+      const p = project(point, width, height);
+      if (index === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
     });
     ctx.stroke();
     ctx.restore();
@@ -366,25 +362,30 @@
     const start = project(from, width, height);
     const vmag = Math.max(vec.mag(vector), 1e-9);
     const unit = vec.scale(vector, 1 / vmag);
-    const extent = visibleExtent();
-    const worldLen = extent * .16;
-    const end = project(vec.add(from, vec.scale(unit, worldLen)), width, height);
-    let dx = end.x - start.x, dy = end.y - start.y;
+    const end = project(vec.add(from, vec.scale(unit, visibleExtent() * .16)), width, height);
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
     const plen = Math.hypot(dx, dy) || 1;
     const factor = Math.min(1, maxPixels / plen);
-    dx *= factor; dy *= factor;
-    const ex = start.x + dx, ey = start.y + dy;
+    dx *= factor;
+    dy *= factor;
+    const ex = start.x + dx;
+    const ey = start.y + dy;
+    const angle = Math.atan2(dy, dx);
     ctx.save();
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(ex, ey); ctx.stroke();
-    const angle = Math.atan2(dy, dx);
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(ex, ey);
     ctx.lineTo(ex - 10 * Math.cos(angle - .45), ey - 10 * Math.sin(angle - .45));
     ctx.lineTo(ex - 10 * Math.cos(angle + .45), ey - 10 * Math.sin(angle + .45));
-    ctx.closePath(); ctx.fill();
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
 
@@ -395,36 +396,102 @@
     const radiusPx = Math.max(state.bodyKey === 'earth' ? 28 : 34, Math.min(80, Math.hypot(edge.x - origin.x, edge.y - origin.y)));
     const g = ctx.createRadialGradient(origin.x - radiusPx * .32, origin.y - radiusPx * .35, radiusPx * .08, origin.x, origin.y, radiusPx * 1.2);
     if (state.bodyKey === 'earth') {
-      g.addColorStop(0, '#d9f2ff'); g.addColorStop(.25, '#5fb8ff'); g.addColorStop(.7, '#1d5fb4'); g.addColorStop(1, '#09274f');
+      g.addColorStop(0, '#d9f2ff');
+      g.addColorStop(.25, '#5fb8ff');
+      g.addColorStop(.7, '#1d5fb4');
+      g.addColorStop(1, '#09274f');
     } else {
-      g.addColorStop(0, '#fffbd0'); g.addColorStop(.28, '#ffd36a'); g.addColorStop(.72, '#ef8e29'); g.addColorStop(1, '#8f4318');
+      g.addColorStop(0, '#fffbd0');
+      g.addColorStop(.28, '#ffd36a');
+      g.addColorStop(.72, '#ef8e29');
+      g.addColorStop(1, '#8f4318');
     }
     ctx.save();
     ctx.shadowColor = b.glowColor;
     ctx.shadowBlur = radiusPx * .9;
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(origin.x, origin.y, radiusPx, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    ctx.arc(origin.x, origin.y, radiusPx, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawMarker(p) {
+    ctx.save();
+    ctx.shadowColor = 'rgba(157,240,208,.75)';
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = '#d9fff1';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, state.bodyKey === 'earth' ? 5 : 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawRocket(width, height, p) {
+    const speed = vec.mag(state.vel);
+    const unit = speed > 0 ? vec.scale(state.vel, 1 / speed) : { x: 0, y: 1, z: 0 };
+    const aheadWorld = vec.add(state.pos, vec.scale(unit, visibleExtent() * .08));
+    const ahead = project(aheadWorld, width, height);
+    let angle = Math.atan2(ahead.y - p.y, ahead.x - p.x);
+    if (!Number.isFinite(angle)) angle = -Math.PI / 2;
+
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(angle);
+    ctx.shadowColor = 'rgba(157,240,208,.65)';
+    ctx.shadowBlur = 12;
+
+    ctx.fillStyle = '#e9f3ff';
+    ctx.strokeStyle = '#93b8df';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(15, 0);
+    ctx.quadraticCurveTo(8, -5, 1, -5);
+    ctx.lineTo(-7, -5);
+    ctx.lineTo(-11, -9);
+    ctx.lineTo(-10, -3);
+    ctx.lineTo(-14, 0);
+    ctx.lineTo(-10, 3);
+    ctx.lineTo(-11, 9);
+    ctx.lineTo(-7, 5);
+    ctx.lineTo(1, 5);
+    ctx.quadraticCurveTo(8, 5, 15, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#65b8ff';
+    ctx.beginPath();
+    ctx.arc(4, 0, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffb65c';
+    ctx.beginPath();
+    ctx.moveTo(-13, -2.2);
+    ctx.lineTo(-20, 0);
+    ctx.lineTo(-13, 2.2);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
 
   function drawObject(width, height) {
     const p = project(state.pos, width, height);
-    ctx.save();
-    ctx.shadowColor = 'rgba(157,240,208,.75)';
-    ctx.shadowBlur = 16;
-    ctx.fillStyle = '#d9fff1';
-    ctx.beginPath(); ctx.arc(p.x, p.y, state.bodyKey === 'earth' ? 5 : 7, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+    if (els.orbitObject && els.orbitObject.value === 'rocket') drawRocket(width, height, p);
+    else drawMarker(p);
   }
 
   function render() {
     resizeCanvas();
     const rect = canvas.getBoundingClientRect();
-    const width = rect.width, height = rect.height;
+    const width = rect.width;
+    const height = rect.height;
     ctx.clearRect(0, 0, width, height);
     const bg = ctx.createLinearGradient(0, 0, 0, height);
-    bg.addColorStop(0, '#050914'); bg.addColorStop(1, '#03050a');
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, width, height);
+    bg.addColorStop(0, '#050914');
+    bg.addColorStop(1, '#03050a');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, width, height);
     drawStars(width, height);
     cameraForPreset();
 
@@ -484,7 +551,9 @@
     els.gravityOut.textContent = `${Number(els.gravity.value).toFixed(2)}×`;
     scheduleReset();
   });
-  els.simSpeed.addEventListener('input', () => { els.simSpeedOut.textContent = `${Number(els.simSpeed.value).toFixed(2).replace(/\.00$/, '')}×`; });
+  els.simSpeed.addEventListener('input', () => {
+    els.simSpeedOut.textContent = `${Number(els.simSpeed.value).toFixed(2).replace(/\.00$/, '')}×`;
+  });
   els.playPause.addEventListener('click', () => {
     state.playing = !state.playing;
     els.playPause.textContent = state.playing ? 'Pause' : 'Play';
@@ -503,7 +572,8 @@
     if (!state.pointer.down) return;
     const dx = e.clientX - state.pointer.x;
     const dy = e.clientY - state.pointer.y;
-    state.pointer.x = e.clientX; state.pointer.y = e.clientY;
+    state.pointer.x = e.clientX;
+    state.pointer.y = e.clientY;
     state.camera.yaw += dx * .008;
     state.camera.pitch = Math.max(-1.45, Math.min(1.45, state.camera.pitch - dy * .008));
   });
@@ -517,5 +587,8 @@
   window.addEventListener('resize', render);
 
   configureMode('earth');
-  requestAnimationFrame((t) => { state.lastFrame = t; animate(t); });
+  requestAnimationFrame((t) => {
+    state.lastFrame = t;
+    animate(t);
+  });
 })();
