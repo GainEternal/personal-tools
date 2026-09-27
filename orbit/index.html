@@ -29,8 +29,8 @@
         <canvas id="orbitCanvas"></canvas>
         <div class="telemetry-strip" aria-live="polite">
           <div class="telemetry-item"><span>Status</span><strong id="status" class="status-pill">Circular</strong></div>
-          <div class="telemetry-item"><span id="distanceLabel">Altitude</span><strong id="distanceValue">400 km</strong></div>
-          <div class="telemetry-item"><span>Speed</span><strong id="speedValue">7.67 km/s</strong></div>
+          <div class="telemetry-item"><span id="distanceLabel">Altitude</span><strong id="distanceValue">1,274 km</strong></div>
+          <div class="telemetry-item"><span>Speed</span><strong id="speedValue">7.22 km/s</strong></div>
           <div class="telemetry-item"><span>Elapsed</span><strong id="elapsedValue">0 s</strong></div>
         </div>
         <p class="stage-hint">Drag to rotate • wheel/pinch to zoom • Home camera does not reset the simulation</p>
@@ -53,12 +53,12 @@
           <h2>Initial conditions</h2>
           <div class="field">
             <label id="radiusInputLabel" for="altitude">Starting altitude (km)</label>
-            <input id="altitude" type="number" min="0" step="10" value="400" />
+            <input id="altitude" type="number" min="0" step="10" value="1274.2" />
           </div>
           <div class="inline-fields">
             <div class="field">
               <label for="initialSpeed">Initial speed (km/s)</label>
-              <input id="initialSpeed" type="number" min="0" step="0.01" value="7.67" />
+              <input id="initialSpeed" type="number" min="0" step="0.01" value="7.221" />
             </div>
             <div class="field">
               <label for="direction">Direction (°)</label>
@@ -84,8 +84,8 @@
           <div class="field">
             <label for="orbitObject">Orbit object</label>
             <select id="orbitObject">
+              <option value="rocket" selected>Rocketship</option>
               <option value="marker">Marker</option>
-              <option value="rocket">Rocketship</option>
             </select>
           </div>
           <div class="field">
