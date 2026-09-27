@@ -82,6 +82,13 @@
         <section class="control-section">
           <h2>View & playback</h2>
           <div class="field">
+            <label for="orbitObject">Orbit object</label>
+            <select id="orbitObject">
+              <option value="marker">Marker</option>
+              <option value="rocket">Rocketship</option>
+            </select>
+          </div>
+          <div class="field">
             <label for="cameraPreset">Camera</label>
             <select id="cameraPreset">
               <option value="free">Free</option>
@@ -107,6 +114,7 @@
       </aside>
     </div>
   </main>
+  <script src="./object-display.js"></script>
   <script src="./orbit.js"></script>
 </body>
 </html>
