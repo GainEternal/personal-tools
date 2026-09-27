@@ -30,15 +30,19 @@
     radiusInputLabel: document.getElementById('radiusInputLabel')
   };
 
+  const EARTH_RADIUS = 6371;
+  const HIGH_ORBIT_ALTITUDE = EARTH_RADIUS * 0.2;
+  const HIGH_ORBIT_SPEED = Math.sqrt(398600.4418 / (EARTH_RADIUS + HIGH_ORBIT_ALTITUDE));
+
   const BODIES = {
     earth: {
-      radius: 6371,
+      radius: EARTH_RADIUS,
       mu: 398600.4418,
       atmosphere: 100,
-      defaultAltitude: 400,
-      defaultSpeed: 7.67,
+      defaultAltitude: HIGH_ORBIT_ALTITUDE,
+      defaultSpeed: HIGH_ORBIT_SPEED,
       baseStep: 4,
-      glowColor: 'rgba(79,163,255,.28)',
+      glowColor: 'rgba(86,176,255,.38)',
       scaleLabel: 'Altitude'
     },
     sun: {
@@ -48,17 +52,18 @@
       defaultAltitude: 148901530,
       defaultSpeed: 29.78,
       baseStep: 9000,
-      glowColor: 'rgba(255,197,92,.28)',
+      glowColor: 'rgba(255,197,92,.34)',
       scaleLabel: 'Distance from surface'
     }
   };
 
   const PRESETS = {
     earth: [
+      { name: 'High circular', altitude: HIGH_ORBIT_ALTITUDE, speed: HIGH_ORBIT_SPEED, direction: 0, inclination: 0 },
       { name: 'Low circular', altitude: 400, speed: 7.67, direction: 0, inclination: 0 },
       { name: 'High ellipse', altitude: 400, speed: 9.2, direction: 0, inclination: 0 },
-      { name: 'Escape', altitude: 400, speed: 11.2, direction: 0, inclination: 0 },
-      { name: 'Reentry', altitude: 200, speed: 7.2, direction: -8, inclination: 0 }
+      { name: 'Reentry', altitude: 200, speed: 7.2, direction: -8, inclination: 0 },
+      { name: 'Escape', altitude: 400, speed: 11.2, direction: 0, inclination: 0 }
     ],
     sun: [
       { name: 'Earth-like', altitude: 148901530, speed: 29.78, direction: 0, inclination: 0 },
@@ -70,15 +75,17 @@
 
   const state = {
     bodyKey: 'earth',
-    pos: { x: 6771, y: 0, z: 0 },
-    vel: { x: 0, y: 7.67, z: 0 },
+    pos: { x: EARTH_RADIUS + HIGH_ORBIT_ALTITUDE, y: 0, z: 0 },
+    vel: { x: 0, y: HIGH_ORBIT_SPEED, z: 0 },
     elapsed: 0,
     playing: true,
     trail: [],
     prediction: [],
     status: 'Circular',
     crashed: false,
+    explosion: null,
     lastFrame: performance.now(),
+    lastRocketAngle: -Math.PI / 2,
     camera: { yaw: -0.55, pitch: 0.5, zoom: 1 },
     pointer: { down: false, x: 0, y: 0 }
   };
@@ -86,7 +93,11 @@
   const vec = {
     add: (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }),
     scale: (a, s) => ({ x: a.x * s, y: a.y * s, z: a.z * s }),
-    mag: (a) => Math.hypot(a.x, a.y, a.z)
+    mag: (a) => Math.hypot(a.x, a.y, a.z),
+    unit: (a) => {
+      const m = Math.hypot(a.x, a.y, a.z);
+      return m > 1e-12 ? { x: a.x / m, y: a.y / m, z: a.z / m } : { x: 1, y: 0, z: 0 };
+    }
   };
 
   function body() { return BODIES[state.bodyKey]; }
@@ -111,7 +122,6 @@
     const p4 = vec.add(pos, vec.scale(v3, dt));
     const v4 = vec.add(vel, vec.scale(a3, dt));
     const a4 = acceleration(p4);
-
     return {
       pos: {
         x: pos.x + (dt / 6) * (vel.x + 2 * v2.x + 2 * v3.x + v4.x),
@@ -152,6 +162,7 @@
     state.elapsed = 0;
     state.trail = [{ ...state.pos }];
     state.crashed = false;
+    state.explosion = null;
     state.playing = true;
     els.playPause.textContent = 'Pause';
     updatePrediction();
@@ -208,14 +219,13 @@
 
   function updateStatus() {
     state.status = classifyOrbit();
-    state.crashed = state.status === 'Impact';
   }
 
   function formatDistance(km) {
     if (Math.abs(km) >= 1e8) return `${(km / 1e6).toFixed(1)} million km`;
     if (Math.abs(km) >= 1e6) return `${(km / 1e6).toFixed(2)} million km`;
     if (Math.abs(km) >= 10000) return `${Math.round(km).toLocaleString()} km`;
-    return `${Math.round(km)} km`;
+    return `${Math.round(km).toLocaleString()} km`;
   }
 
   function formatTime(seconds) {
@@ -241,8 +251,8 @@
       const button = document.createElement('button');
       button.textContent = preset.name;
       button.addEventListener('click', () => {
-        els.altitude.value = preset.altitude;
-        els.initialSpeed.value = preset.speed;
+        els.altitude.value = Number(preset.altitude.toFixed(2));
+        els.initialSpeed.value = Number(preset.speed.toFixed(3));
         els.direction.value = preset.direction;
         els.inclination.value = preset.inclination;
         resetSimulation();
@@ -258,8 +268,8 @@
     els.altitude.step = key === 'earth' ? '10' : '1000000';
     els.initialSpeed.step = key === 'earth' ? '.01' : '.1';
     if (useDefaults) {
-      els.altitude.value = b.defaultAltitude;
-      els.initialSpeed.value = b.defaultSpeed;
+      els.altitude.value = Number(b.defaultAltitude.toFixed(2));
+      els.initialSpeed.value = Number(b.defaultSpeed.toFixed(3));
       els.direction.value = 0;
       els.inclination.value = 0;
       els.gravity.value = 1;
@@ -317,27 +327,31 @@
   }
 
   function visibleExtent() {
-    const samples = [state.pos, ...state.prediction.slice(0, 220)];
-    let max = body().radius * 1.35;
-    samples.forEach((p) => { max = Math.max(max, vec.mag(p)); });
-    return max;
+    const current = Math.max(vec.mag(state.pos), body().radius * 1.2);
+    let predictedMax = current;
+    state.prediction.slice(0, 250).forEach((p) => { predictedMax = Math.max(predictedMax, vec.mag(p)); });
+    return Math.max(body().radius * 1.25, Math.min(predictedMax, current * 3.2));
+  }
+
+  function worldScale(width, height) {
+    return Math.min(width, height) * .40 / visibleExtent() * state.camera.zoom;
   }
 
   function project(p, width, height) {
     const r = rotatePoint(p);
-    const extent = visibleExtent();
-    const scale = Math.min(width, height) * .40 / extent * state.camera.zoom;
+    const scale = worldScale(width, height);
     return { x: width / 2 + r.x * scale, y: height / 2 - r.y * scale, depth: r.z, scale };
   }
 
   function drawStars(width, height) {
     ctx.save();
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 120; i++) {
       const x = (i * 97.31) % width;
       const y = (i * i * 19.17 + 37) % height;
-      const alpha = .18 + ((i * 13) % 50) / 100;
+      const alpha = .16 + ((i * 13) % 54) / 100;
       ctx.fillStyle = `rgba(230,238,255,${alpha})`;
-      ctx.fillRect(x, y, i % 9 === 0 ? 1.5 : 1, i % 9 === 0 ? 1.5 : 1);
+      const size = i % 11 === 0 ? 1.6 : 1;
+      ctx.fillRect(x, y, size, size);
     }
     ctx.restore();
   }
@@ -389,31 +403,122 @@
     ctx.restore();
   }
 
-  function drawBody(width, height) {
-    const b = body();
-    const origin = project({ x: 0, y: 0, z: 0 }, width, height);
-    const edge = project({ x: b.radius, y: 0, z: 0 }, width, height);
-    const radiusPx = Math.max(state.bodyKey === 'earth' ? 28 : 34, Math.min(80, Math.hypot(edge.x - origin.x, edge.y - origin.y)));
-    const g = ctx.createRadialGradient(origin.x - radiusPx * .32, origin.y - radiusPx * .35, radiusPx * .08, origin.x, origin.y, radiusPx * 1.2);
-    if (state.bodyKey === 'earth') {
-      g.addColorStop(0, '#d9f2ff');
-      g.addColorStop(.25, '#5fb8ff');
-      g.addColorStop(.7, '#1d5fb4');
-      g.addColorStop(1, '#09274f');
-    } else {
-      g.addColorStop(0, '#fffbd0');
-      g.addColorStop(.28, '#ffd36a');
-      g.addColorStop(.72, '#ef8e29');
-      g.addColorStop(1, '#8f4318');
-    }
+  function earthRadiusPx(width, height) {
+    return body().radius * worldScale(width, height);
+  }
+
+  function clipCircle(x, y, radius, fn) {
     ctx.save();
-    ctx.shadowColor = b.glowColor;
-    ctx.shadowBlur = radiusPx * .9;
-    ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(origin.x, origin.y, radiusPx, 0, Math.PI * 2);
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.clip();
+    fn();
+    ctx.restore();
+  }
+
+  function drawEarth(width, height) {
+    const origin = project({ x: 0, y: 0, z: 0 }, width, height);
+    const radius = earthRadiusPx(width, height);
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(72,166,255,.55)';
+    ctx.shadowBlur = Math.max(10, radius * .13);
+    const ocean = ctx.createRadialGradient(
+      origin.x - radius * .34, origin.y - radius * .38, radius * .08,
+      origin.x + radius * .06, origin.y + radius * .08, radius * 1.05
+    );
+    ocean.addColorStop(0, '#8ed7ff');
+    ocean.addColorStop(.17, '#258bd0');
+    ocean.addColorStop(.56, '#0b5798');
+    ocean.addColorStop(.88, '#063663');
+    ocean.addColorStop(1, '#021b35');
+    ctx.fillStyle = ocean;
+    ctx.beginPath();
+    ctx.arc(origin.x, origin.y, radius, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+
+    clipCircle(origin.x, origin.y, radius, () => {
+      const daylight = ctx.createRadialGradient(
+        origin.x - radius * .42, origin.y - radius * .42, 0,
+        origin.x - radius * .15, origin.y - radius * .12, radius * 1.35
+      );
+      daylight.addColorStop(0, 'rgba(255,255,230,.22)');
+      daylight.addColorStop(.55, 'rgba(255,255,255,.02)');
+      daylight.addColorStop(1, 'rgba(0,5,20,.40)');
+      ctx.fillStyle = daylight;
+      ctx.fillRect(origin.x - radius, origin.y - radius, radius * 2, radius * 2);
+
+      ctx.fillStyle = '#66a84f';
+      const land = (pts) => {
+        ctx.beginPath();
+        pts.forEach(([x, y], i) => {
+          const px = origin.x + x * radius;
+          const py = origin.y + y * radius;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        });
+        ctx.closePath();
+        ctx.fill();
+      };
+      land([[-.70,-.34],[-.56,-.55],[-.30,-.59],[-.12,-.42],[-.20,-.24],[-.38,-.18],[-.49,.02],[-.65,-.06],[-.76,-.20]]);
+      land([[-.35,.06],[-.18,.13],[-.12,.32],[-.22,.57],[-.34,.76],[-.45,.55],[-.50,.30]]);
+      land([[.03,-.43],[.27,-.48],[.43,-.33],[.34,-.17],[.17,-.08],[.27,.07],[.22,.37],[.08,.61],[-.06,.37],[-.08,.10],[-.19,-.02],[-.10,-.22]]);
+      land([[.31,-.50],[.58,-.52],[.79,-.33],[.71,-.12],[.51,-.06],[.39,-.16],[.23,-.22]]);
+      land([[.54,.35],[.73,.31],[.82,.46],[.69,.59],[.50,.53]]);
+      land([[-.30,-.71],[-.14,-.83],[.00,-.72],[-.08,-.58],[-.24,-.58]]);
+
+      ctx.fillStyle = 'rgba(211,188,99,.58)';
+      land([[.02,-.06],[.30,-.09],[.38,.03],[.23,.16],[-.02,.10],[-.10,.02]]);
+      land([[.45,-.18],[.65,-.18],[.61,-.06],[.45,-.04]]);
+
+      ctx.fillStyle = 'rgba(235,248,255,.88)';
+      ctx.beginPath();
+      ctx.ellipse(origin.x, origin.y - radius * .78, radius * .52, radius * .17, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(origin.x, origin.y + radius * .88, radius * .48, radius * .10, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(245,252,255,.45)';
+      ctx.lineWidth = Math.max(1, radius * .018);
+      ctx.lineCap = 'round';
+      [[-.48,-.20,.38],[-.05,.27,.46],[.36,-.31,.32],[.46,.15,.27],[-.45,.48,.24]].forEach(([x,y,len]) => {
+        ctx.beginPath();
+        ctx.arc(origin.x + x * radius, origin.y + y * radius, len * radius, .12, 1.15);
+        ctx.stroke();
+      });
+    });
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(143,211,255,.72)';
+    ctx.lineWidth = Math.max(1.5, radius * .018);
+    ctx.beginPath();
+    ctx.arc(origin.x, origin.y, radius + ctx.lineWidth * .5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawSun(width, height) {
+    const origin = project({ x: 0, y: 0, z: 0 }, width, height);
+    const radius = body().radius * worldScale(width, height);
+    const g = ctx.createRadialGradient(origin.x - radius * .25, origin.y - radius * .3, radius * .04, origin.x, origin.y, radius);
+    g.addColorStop(0, '#fffbd0');
+    g.addColorStop(.28, '#ffd86f');
+    g.addColorStop(.72, '#f39a2f');
+    g.addColorStop(1, '#a64b18');
+    ctx.save();
+    ctx.shadowColor = body().glowColor;
+    ctx.shadowBlur = Math.max(18, radius * .25);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(origin.x, origin.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawBody(width, height) {
+    if (state.bodyKey === 'earth') drawEarth(width, height);
+    else drawSun(width, height);
   }
 
   function drawMarker(p) {
@@ -429,56 +534,142 @@
 
   function drawRocket(width, height, p) {
     const speed = vec.mag(state.vel);
-    const unit = speed > 0 ? vec.scale(state.vel, 1 / speed) : { x: 0, y: 1, z: 0 };
-    const aheadWorld = vec.add(state.pos, vec.scale(unit, visibleExtent() * .08));
-    const ahead = project(aheadWorld, width, height);
-    let angle = Math.atan2(ahead.y - p.y, ahead.x - p.x);
-    if (!Number.isFinite(angle)) angle = -Math.PI / 2;
+    if (speed > 1e-5) {
+      const unit = vec.scale(state.vel, 1 / speed);
+      const ahead = project(vec.add(state.pos, vec.scale(unit, visibleExtent() * .06)), width, height);
+      const angle = Math.atan2(ahead.y - p.y, ahead.x - p.x);
+      if (Number.isFinite(angle) && Math.hypot(ahead.x - p.x, ahead.y - p.y) > .2) state.lastRocketAngle = angle;
+    }
 
+    const angle = state.lastRocketAngle;
+    const scale = state.bodyKey === 'earth' ? 1.05 : 1.15;
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(angle);
-    ctx.shadowColor = 'rgba(157,240,208,.65)';
-    ctx.shadowBlur = 12;
+    ctx.scale(scale, scale);
+    ctx.shadowColor = 'rgba(120,195,255,.55)';
+    ctx.shadowBlur = 9;
 
-    ctx.fillStyle = '#e9f3ff';
-    ctx.strokeStyle = '#93b8df';
-    ctx.lineWidth = 1.2;
+    if (state.playing && !state.crashed) {
+      const flicker = 1 + .14 * Math.sin(state.elapsed * 4.7);
+      const flame = ctx.createLinearGradient(-24, 0, -9, 0);
+      flame.addColorStop(0, 'rgba(255,88,33,.15)');
+      flame.addColorStop(.45, '#ff7d31');
+      flame.addColorStop(1, '#ffe26b');
+      ctx.fillStyle = flame;
+      ctx.beginPath();
+      ctx.moveTo(-10, -3.2);
+      ctx.lineTo(-24 * flicker, 0);
+      ctx.lineTo(-10, 3.2);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.fillStyle = '#dc3f46';
     ctx.beginPath();
-    ctx.moveTo(15, 0);
-    ctx.quadraticCurveTo(8, -5, 1, -5);
-    ctx.lineTo(-7, -5);
-    ctx.lineTo(-11, -9);
-    ctx.lineTo(-10, -3);
-    ctx.lineTo(-14, 0);
-    ctx.lineTo(-10, 3);
-    ctx.lineTo(-11, 9);
-    ctx.lineTo(-7, 5);
-    ctx.lineTo(1, 5);
-    ctx.quadraticCurveTo(8, 5, 15, 0);
+    ctx.moveTo(-8, -5);
+    ctx.lineTo(-13, -10);
+    ctx.lineTo(-12, -3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-8, 5);
+    ctx.lineTo(-13, 10);
+    ctx.lineTo(-12, 3);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#f1f5f8';
+    ctx.strokeStyle = '#a7bbca';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(12, 0);
+    ctx.quadraticCurveTo(7, -5.2, -6, -5.2);
+    ctx.lineTo(-10, -3.6);
+    ctx.lineTo(-10, 3.6);
+    ctx.lineTo(-6, 5.2);
+    ctx.quadraticCurveTo(7, 5.2, 12, 0);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = '#65b8ff';
+    ctx.fillStyle = '#e44b50';
     ctx.beginPath();
-    ctx.arc(4, 0, 2.6, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#ffb65c';
-    ctx.beginPath();
-    ctx.moveTo(-13, -2.2);
-    ctx.lineTo(-20, 0);
-    ctx.lineTo(-13, 2.2);
+    ctx.moveTo(12, 0);
+    ctx.quadraticCurveTo(9.2, -3.4, 6.8, -4.3);
+    ctx.lineTo(6.8, 4.3);
+    ctx.quadraticCurveTo(9.2, 3.4, 12, 0);
     ctx.closePath();
     ctx.fill();
+
+    ctx.fillStyle = '#56b9e9';
+    ctx.strokeStyle = '#d7f4ff';
+    ctx.lineWidth = .9;
+    ctx.beginPath();
+    ctx.arc(1.8, 0, 2.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
     ctx.restore();
   }
 
   function drawObject(width, height) {
+    if (state.crashed) return;
     const p = project(state.pos, width, height);
     if (els.orbitObject && els.orbitObject.value === 'rocket') drawRocket(width, height, p);
     else drawMarker(p);
+  }
+
+  function triggerImpact() {
+    if (state.crashed) return;
+    const b = body();
+    const hitDirection = vec.unit(state.pos);
+    const impactPos = vec.scale(hitDirection, b.radius);
+    state.pos = impactPos;
+    state.crashed = true;
+    state.playing = false;
+    state.status = 'Impact';
+    els.playPause.textContent = 'Play';
+    const particles = [];
+    for (let i = 0; i < 30; i++) {
+      const angle = (Math.PI * 2 * i / 30) + (Math.random() - .5) * .28;
+      const speed = 30 + Math.random() * 85;
+      particles.push({ angle, speed, size: 1.4 + Math.random() * 3.6, phase: Math.random() * 5 });
+    }
+    state.explosion = { pos: impactPos, age: 0, duration: 2.1, particles };
+    updateTelemetry();
+  }
+
+  function drawExplosion(width, height) {
+    const ex = state.explosion;
+    if (!ex || ex.age >= ex.duration) return;
+    const p = project(ex.pos, width, height);
+    const t = ex.age / ex.duration;
+    const fade = Math.max(0, 1 - t);
+    const flashRadius = 12 + 56 * Math.sin(Math.min(1, t * 2.3) * Math.PI / 2) * fade;
+
+    ctx.save();
+    const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, flashRadius);
+    glow.addColorStop(0, `rgba(255,255,220,${.95 * fade})`);
+    glow.addColorStop(.28, `rgba(255,208,62,${.9 * fade})`);
+    glow.addColorStop(.58, `rgba(255,91,25,${.72 * fade})`);
+    glow.addColorStop(1, 'rgba(120,20,5,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, flashRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ex.particles.forEach((particle, i) => {
+      const travel = particle.speed * ex.age * (1 - .30 * t);
+      const x = p.x + Math.cos(particle.angle) * travel;
+      const y = p.y + Math.sin(particle.angle) * travel;
+      const alpha = fade * (0.55 + 0.45 * Math.sin(particle.phase + i));
+      ctx.fillStyle = i % 3 === 0 ? `rgba(255,224,96,${alpha})` : `rgba(255,105,35,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(x, y, particle.size * fade, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
   }
 
   function render() {
@@ -489,41 +680,62 @@
     ctx.clearRect(0, 0, width, height);
     const bg = ctx.createLinearGradient(0, 0, 0, height);
     bg.addColorStop(0, '#050914');
-    bg.addColorStop(1, '#03050a');
+    bg.addColorStop(1, '#020409');
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
     drawStars(width, height);
     cameraForPreset();
 
-    if (els.showPrediction.checked) drawPath(state.prediction, width, height, 'rgba(131,182,255,.48)', 1.5, [7, 7]);
+    if (els.showPrediction.checked && !state.crashed) drawPath(state.prediction, width, height, 'rgba(131,182,255,.48)', 1.5, [7, 7]);
     if (els.showTrail.checked) drawPath(state.trail, width, height, 'rgba(157,240,208,.72)', 2);
     drawBody(width, height);
     drawObject(width, height);
-    if (els.showVelocity.checked) drawArrow(state.pos, state.vel, width, height, '#9df0d0');
-    if (els.showGravity.checked) drawArrow(state.pos, acceleration(state.pos), width, height, '#ffae7c');
+    if (!state.crashed && els.showVelocity.checked) drawArrow(state.pos, state.vel, width, height, '#9df0d0');
+    if (!state.crashed && els.showGravity.checked) drawArrow(state.pos, acceleration(state.pos), width, height, '#ffae7c');
+    drawExplosion(width, height);
   }
 
   function simulationStep(realDt) {
+    if (state.explosion) state.explosion.age += realDt;
     if (!state.playing || state.crashed) return;
+
     const speedFactor = Number(els.simSpeed.value);
     const b = body();
     const simulated = realDt * speedFactor * b.baseStep * 10;
     const maxChunk = b.baseStep * 8;
     let remaining = simulated;
+
     while (remaining > 0) {
       const dt = Math.min(remaining, maxChunk);
+      const previousPos = { ...state.pos };
       const next = rk4Step(state.pos, state.vel, dt);
       state.pos = next.pos;
       state.vel = next.vel;
       state.elapsed += dt;
       remaining -= dt;
+
       if (vec.mag(state.pos) <= b.radius) {
-        state.crashed = true;
-        state.playing = false;
+        let lo = 0, hi = 1;
+        for (let i = 0; i < 14; i++) {
+          const mid = (lo + hi) / 2;
+          const test = {
+            x: previousPos.x + (state.pos.x - previousPos.x) * mid,
+            y: previousPos.y + (state.pos.y - previousPos.y) * mid,
+            z: previousPos.z + (state.pos.z - previousPos.z) * mid
+          };
+          if (vec.mag(test) > b.radius) lo = mid; else hi = mid;
+        }
+        state.pos = {
+          x: previousPos.x + (state.pos.x - previousPos.x) * hi,
+          y: previousPos.y + (state.pos.y - previousPos.y) * hi,
+          z: previousPos.z + (state.pos.z - previousPos.z) * hi
+        };
+        triggerImpact();
         break;
       }
     }
-    if (state.trail.length === 0 || state.elapsed % (b.baseStep * 18) < simulated) {
+
+    if (!state.crashed && (state.trail.length === 0 || state.elapsed % (b.baseStep * 18) < simulated)) {
       state.trail.push({ ...state.pos });
       if (state.trail.length > 1200) state.trail.shift();
     }
@@ -555,6 +767,10 @@
     els.simSpeedOut.textContent = `${Number(els.simSpeed.value).toFixed(2).replace(/\.00$/, '')}×`;
   });
   els.playPause.addEventListener('click', () => {
+    if (state.crashed) {
+      resetSimulation();
+      return;
+    }
     state.playing = !state.playing;
     els.playPause.textContent = state.playing ? 'Pause' : 'Play';
   });
