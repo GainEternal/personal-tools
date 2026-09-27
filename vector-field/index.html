@@ -3,17 +3,101 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Interactive vector field explorer with editable equations and animated particles." />
   <title>Vector Field Explorer</title>
-  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../app.css" />
 </head>
-<body>
-  <main class="tool-shell">
-    <a class="back" href="../">← All tools</a>
-    <section class="tool-panel">
-      <p class="eyebrow">Math</p>
-      <h1>Vector Field Explorer</h1>
-      <p>This route is ready for the interactive vector-field visualizer, with room for editable equations, density controls, presets, particles, and hover readouts.</p>
-    </section>
+<body class="app-page">
+  <main class="app-shell">
+    <header class="app-topbar">
+      <div>
+        <a class="app-back" href="../">← All tools</a>
+        <div class="app-title">
+          <h1>Vector Field Explorer</h1>
+          <p>Edit the field, adjust density, and watch particles trace the flow.</p>
+        </div>
+      </div>
+      <div class="button-row">
+        <button id="playPause" class="primary">Pause</button>
+        <button id="resetParticles">Reset particles</button>
+        <button id="homeView">Home view</button>
+      </div>
+    </header>
+
+    <div class="app-layout">
+      <section class="stage-card" aria-label="Vector field plot">
+        <canvas id="fieldCanvas"></canvas>
+        <div id="hoverCard" class="hover-card">Move over the plot to inspect <strong>F(x,y)</strong>.</div>
+        <p class="stage-hint">Drag to pan • wheel/pinch to zoom • hover for vector values</p>
+      </section>
+
+      <aside class="control-panel">
+        <section class="control-section">
+          <h2>Vector field</h2>
+          <div class="equation-row field">
+            <code>Fx</code>
+            <input id="fx" type="text" value="-y" aria-label="X component equation" />
+          </div>
+          <div class="equation-row field">
+            <code>Fy</code>
+            <input id="fy" type="text" value="x" aria-label="Y component equation" />
+          </div>
+          <p class="help-text">Use x, y, + − * / ^ and functions such as sin(), cos(), tan(), sqrt(), abs(), exp(), log().</p>
+          <p id="equationError" class="error-text" aria-live="polite"></p>
+          <div class="preset-grid" id="presetGrid"></div>
+        </section>
+
+        <section class="control-section">
+          <h2>Display</h2>
+          <div class="field">
+            <label for="density">Arrow density</label>
+            <div class="range-row">
+              <input id="density" type="range" min="8" max="32" step="1" value="18" />
+              <output id="densityOut">18</output>
+            </div>
+          </div>
+          <div class="field">
+            <label for="arrowScale">Arrow length</label>
+            <div class="range-row">
+              <input id="arrowScale" type="range" min="0.35" max="1.8" step="0.05" value="1" />
+              <output id="arrowScaleOut">1×</output>
+            </div>
+          </div>
+          <div class="toggle-list">
+            <label class="toggle"><input id="showArrows" type="checkbox" checked /> Show arrows</label>
+            <label class="toggle"><input id="showParticles" type="checkbox" checked /> Animated particles</label>
+            <label class="toggle"><input id="normalizeArrows" type="checkbox" checked /> Normalize arrow lengths</label>
+            <label class="toggle"><input id="showGrid" type="checkbox" checked /> Coordinate grid</label>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <h2>Particles</h2>
+          <div class="field">
+            <label for="particleCount">Particle count</label>
+            <div class="range-row">
+              <input id="particleCount" type="range" min="40" max="500" step="10" value="180" />
+              <output id="particleCountOut">180</output>
+            </div>
+          </div>
+          <div class="field">
+            <label for="particleSpeed">Flow speed</label>
+            <div class="range-row">
+              <input id="particleSpeed" type="range" min="0.1" max="2.5" step="0.1" value="0.8" />
+              <output id="particleSpeedOut">0.8×</output>
+            </div>
+          </div>
+          <div class="field">
+            <label for="trailLength">Trail persistence</label>
+            <div class="range-row">
+              <input id="trailLength" type="range" min="0" max="0.96" step="0.02" value="0.86" />
+              <output id="trailLengthOut">86%</output>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
   </main>
+  <script src="./vector-field.js"></script>
 </body>
 </html>
