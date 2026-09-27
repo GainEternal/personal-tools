@@ -185,11 +185,16 @@
     state.camera={yaw:-.55,pitch:.5,zoom:1};
     els.cameraPreset.value='free';
   }
+  function setFollowStartingAngle(){
+    const a=Math.atan2(state.pos.y,state.pos.x);
+    state.camera.yaw=-a-.7;
+    state.camera.pitch=.38;
+  }
   function applyCameraPreset(){
     const mode=els.cameraPreset.value;
     if(mode==='top'){state.camera.yaw=0;state.camera.pitch=Math.PI/2-.01;}
     else if(mode==='side'){state.camera.yaw=0;state.camera.pitch=.02;}
-    else if(mode==='track'||mode==='follow'){
+    else if(mode==='track'){
       const a=Math.atan2(state.pos.y,state.pos.x);
       state.camera.yaw=-a-.7;state.camera.pitch=.38;
     }
@@ -344,9 +349,16 @@
   els.simSpeed.addEventListener('input',()=>{els.simSpeedOut.textContent=`${Number(els.simSpeed.value).toFixed(2).replace(/\.00$/,'')}×`;});
   els.playPause.addEventListener('click',()=>{if(state.crashed)return;state.playing=!state.playing;els.playPause.textContent=state.playing?'Pause':'Play';});
   els.restart.addEventListener('click',resetSimulation);els.homeCamera.addEventListener('click',homeCamera);
-  els.cameraPreset.addEventListener('change',()=>{if(els.cameraPreset.value==='free')return;applyCameraPreset();});
+  els.cameraPreset.addEventListener('change',()=>{
+    if(els.cameraPreset.value==='follow')setFollowStartingAngle();
+    else if(els.cameraPreset.value!=='free')applyCameraPreset();
+  });
 
-  canvas.addEventListener('pointerdown',e=>{state.pointer.down=true;state.pointer.x=e.clientX;state.pointer.y=e.clientY;canvas.setPointerCapture(e.pointerId);els.cameraPreset.value='free';});
+  canvas.addEventListener('pointerdown',e=>{
+    const keepCenteredFollow=els.cameraPreset.value==='follow';
+    state.pointer.down=true;state.pointer.x=e.clientX;state.pointer.y=e.clientY;canvas.setPointerCapture(e.pointerId);
+    if(!keepCenteredFollow)els.cameraPreset.value='free';
+  });
   canvas.addEventListener('pointermove',e=>{
     if(!state.pointer.down)return;
     const dx=e.clientX-state.pointer.x,dy=e.clientY-state.pointer.y;state.pointer.x=e.clientX;state.pointer.y=e.clientY;
