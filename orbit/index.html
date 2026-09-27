@@ -3,17 +3,110 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Interactive orbit simulator for objects around Earth and planets around the Sun." />
   <title>Orbit Explorer</title>
-  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../app.css" />
 </head>
-<body>
-  <main class="tool-shell">
-    <a class="back" href="../">← All tools</a>
-    <section class="tool-panel">
-      <p class="eyebrow">Physics</p>
-      <h1>Orbit Explorer</h1>
-      <p>This route is ready for the interactive orbit app. We can move the existing concept here or build a new implementation directly in this repository.</p>
-    </section>
+<body class="app-page">
+  <main class="app-shell">
+    <header class="app-topbar">
+      <div>
+        <a class="app-back" href="../">← All tools</a>
+        <div class="app-title">
+          <h1>Orbit Explorer</h1>
+          <p>Change the initial conditions and watch gravity shape the trajectory.</p>
+        </div>
+      </div>
+      <div class="button-row" aria-label="Simulation controls">
+        <button id="playPause" class="primary">Pause</button>
+        <button id="restart">Restart</button>
+        <button id="homeCamera">Home camera</button>
+      </div>
+    </header>
+
+    <div class="app-layout">
+      <section class="stage-card" aria-label="Orbit simulation">
+        <canvas id="orbitCanvas"></canvas>
+        <div class="telemetry-strip" aria-live="polite">
+          <div class="telemetry-item"><span>Status</span><strong id="status" class="status-pill">Circular</strong></div>
+          <div class="telemetry-item"><span id="distanceLabel">Altitude</span><strong id="distanceValue">400 km</strong></div>
+          <div class="telemetry-item"><span>Speed</span><strong id="speedValue">7.67 km/s</strong></div>
+          <div class="telemetry-item"><span>Elapsed</span><strong id="elapsedValue">0 s</strong></div>
+        </div>
+        <p class="stage-hint">Drag to rotate • wheel/pinch to zoom • Home camera does not reset the simulation</p>
+      </section>
+
+      <aside class="control-panel">
+        <section class="control-section">
+          <h2>Scenario</h2>
+          <div class="field">
+            <label for="mode">Mode</label>
+            <select id="mode">
+              <option value="earth">Object around Earth</option>
+              <option value="sun">Planet around Sun</option>
+            </select>
+          </div>
+          <div class="preset-grid" id="presetGrid"></div>
+        </section>
+
+        <section class="control-section">
+          <h2>Initial conditions</h2>
+          <div class="field">
+            <label id="radiusInputLabel" for="altitude">Starting altitude (km)</label>
+            <input id="altitude" type="number" min="0" step="10" value="400" />
+          </div>
+          <div class="inline-fields">
+            <div class="field">
+              <label for="initialSpeed">Initial speed (km/s)</label>
+              <input id="initialSpeed" type="number" min="0" step="0.01" value="7.67" />
+            </div>
+            <div class="field">
+              <label for="direction">Direction (°)</label>
+              <input id="direction" type="number" min="-180" max="180" step="1" value="0" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="inclination">Inclination (°)</label>
+            <input id="inclination" type="number" min="-90" max="90" step="1" value="0" />
+          </div>
+          <div class="field">
+            <label for="gravity">Gravity multiplier</label>
+            <div class="range-row">
+              <input id="gravity" type="range" min="0" max="2" step="0.01" value="1" />
+              <output id="gravityOut">1.00×</output>
+            </div>
+          </div>
+          <p class="help-text">Direction 0° is tangential/prograde. Positive values tip the velocity outward; negative values tip it inward.</p>
+        </section>
+
+        <section class="control-section">
+          <h2>View & playback</h2>
+          <div class="field">
+            <label for="cameraPreset">Camera</label>
+            <select id="cameraPreset">
+              <option value="free">Free</option>
+              <option value="top">Top</option>
+              <option value="side">Side</option>
+              <option value="follow">Follow object</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="simSpeed">Simulation speed</label>
+            <div class="range-row">
+              <input id="simSpeed" type="range" min="0.25" max="8" step="0.25" value="1" />
+              <output id="simSpeedOut">1×</output>
+            </div>
+          </div>
+          <div class="toggle-list">
+            <label class="toggle"><input id="showPrediction" type="checkbox" checked /> Predicted trajectory</label>
+            <label class="toggle"><input id="showTrail" type="checkbox" checked /> Trail</label>
+            <label class="toggle"><input id="showVelocity" type="checkbox" checked /> Velocity vector</label>
+            <label class="toggle"><input id="showGravity" type="checkbox" checked /> Gravity vector</label>
+          </div>
+        </section>
+      </aside>
+    </div>
   </main>
+  <script src="./orbit.js"></script>
 </body>
 </html>
