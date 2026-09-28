@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Guided rocket mission: launch, orbit Earth, deorbit, and powered landing." />
+  <title>Orbit Explorer — Launch Mission</title>
+  <link rel="stylesheet" href="../app.css" />
+  <style>
+    .mission-hud{position:absolute;top:76px;left:12px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}.mission-chip{border:1px solid rgba(178,199,229,.13);border-radius:10px;background:rgba(5,8,16,.72);padding:7px 10px;min-width:105px}.mission-chip span{display:block;color:var(--app-muted);font-size:.66rem;text-transform:uppercase;letter-spacing:.08em}.mission-chip strong{font-size:.86rem}.mission-progress{position:absolute;left:12px;right:12px;bottom:43px;display:grid;grid-template-columns:repeat(6,1fr);gap:5px;pointer-events:none}.mission-step{padding:6px 4px;border-radius:8px;border:1px solid rgba(160,184,220,.12);background:rgba(5,8,16,.58);color:rgba(210,222,240,.48);text-align:center;font-size:.68rem}.mission-step.active{color:#fff;border-color:rgba(157,240,208,.65);background:rgba(33,88,78,.58)}.mission-step.done{color:rgba(220,255,244,.72);background:rgba(28,63,61,.38)}.mission-link{display:block;text-align:center;text-decoration:none;color:var(--app-text);border:1px solid var(--app-line);border-radius:10px;background:#0d1421;padding:9px 10px}.mission-link:hover{border-color:rgba(131,182,255,.75)}@media(max-width:620px){.mission-hud{top:126px}.mission-progress{grid-template-columns:repeat(3,1fr);bottom:48px}.mission-step{font-size:.62rem}}
+  </style>
+</head>
+<body class="app-page">
+  <main class="app-shell">
+    <header class="app-topbar">
+      <div>
+        <a class="app-back" href="../">← All tools</a>
+        <div class="app-title">
+          <h1>Orbit Explorer</h1>
+          <p>Launch, complete the selected number of orbits, then perform a guided powered landing.</p>
+        </div>
+      </div>
+      <div class="button-row" aria-label="Mission controls">
+        <button id="playPause" class="primary">Launch</button>
+        <button id="restart">Restart</button>
+        <button id="homeCamera">Home camera</button>
+      </div>
+    </header>
+
+    <div class="app-layout">
+      <section class="stage-card" aria-label="Rocket mission simulation">
+        <canvas id="orbitCanvas"></canvas>
+        <div class="telemetry-strip" aria-live="polite">
+          <div class="telemetry-item"><span>Phase</span><strong id="status" class="status-pill">Prelaunch</strong></div>
+          <div class="telemetry-item"><span>Altitude</span><strong id="altitudeValue">0 km</strong></div>
+          <div class="telemetry-item"><span>Speed</span><strong id="speedValue">0.47 km/s</strong></div>
+          <div class="telemetry-item"><span>Elapsed</span><strong id="elapsedValue">0 s</strong></div>
+        </div>
+        <div class="mission-hud">
+          <div class="mission-chip"><span>Thrust</span><strong id="thrustValue">0.0 MN</strong></div>
+          <div class="mission-chip"><span>Orbit progress</span><strong id="orbitValue">0.00 / 2</strong></div>
+          <div class="mission-chip"><span>Vertical speed</span><strong id="verticalValue">0 m/s</strong></div>
+        </div>
+        <div class="mission-progress" id="missionProgress">
+          <div class="mission-step active" data-step="launch">Launch</div>
+          <div class="mission-step" data-step="ascent">Ascent</div>
+          <div class="mission-step" data-step="orbit1">Orbit 1</div>
+          <div class="mission-step" data-step="orbit2">Orbit 2</div>
+          <div class="mission-step" data-step="return">Return</div>
+          <div class="mission-step" data-step="landing">Landing</div>
+        </div>
+        <p class="stage-hint">Drag to rotate • wheel to zoom • centered Follow keeps the rocket fixed in the middle</p>
+      </section>
+
+      <aside class="control-panel">
+        <section class="control-section">
+          <h2>Scenario</h2>
+          <div class="field">
+            <label>Mission</label>
+            <select disabled>
+              <option>Launch → orbit → powered landing</option>
+            </select>
+          </div>
+          <a class="mission-link" href="./">Return to orbit sandbox</a>
+        </section>
+
+        <section class="control-section">
+          <h2>Mission profile</h2>
+          <div class="field">
+            <label for="targetAltitude">Target orbit altitude (km)</label>
+            <input id="targetAltitude" type="number" min="150" max="2000" step="25" value="400" />
+          </div>
+          <div class="field">
+            <label for="orbitCount">Orbits before return</label>
+            <input id="orbitCount" type="number" min="1" max="5" step="1" value="2" />
+          </div>
+          <p class="help-text">The autopilot applies actual thrust acceleration against Newtonian gravity, circularizes the orbit, coasts for the selected number of revolutions, then performs a controlled powered return.</p>
+          <p class="help-text">This is an educational guided vehicle model: fixed reference mass, no staging or propellant depletion, and no detailed aerodynamic heating model.</p>
+        </section>
+
+        <section class="control-section">
+          <h2>View & playback</h2>
+          <div class="field">
+            <label for="cameraPreset">Camera</label>
+            <select id="cameraPreset">
+              <option value="overview">Mission overview</option>
+              <option value="follow">Follow rocket (centered)</option>
+              <option value="track">Track rocket (Earth centered)</option>
+              <option value="top">Top</option>
+              <option value="side">Side</option>
+              <option value="free">Free</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="simSpeed">Simulation speed</label>
+            <div class="range-row">
+              <input id="simSpeed" type="range" min="0.25" max="8" step="0.25" value="1" />
+              <output id="simSpeedOut">1×</output>
+            </div>
+          </div>
+          <div class="toggle-list">
+            <label class="toggle"><input id="showTrail" type="checkbox" checked /> Flight path</label>
+            <label class="toggle"><input id="showVelocity" type="checkbox" checked /> Velocity vector</label>
+            <label class="toggle"><input id="showGravity" type="checkbox" /> Gravity vector</label>
+            <label class="toggle"><input id="showThrust" type="checkbox" checked /> Thrust vector</label>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+  <script src="./earth-render-fast.js"></script>
+  <script src="./mission.js"></script>
+</body>
+</html>
