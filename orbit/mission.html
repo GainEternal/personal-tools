@@ -17,7 +17,7 @@
         <a class="app-back" href="../">← All tools</a>
         <div class="app-title">
           <h1>Orbit Explorer</h1>
-          <p>Launch, complete the selected number of orbits, then perform a guided powered landing.</p>
+          <p>Launch, complete two orbits, then perform a guided powered landing.</p>
         </div>
       </div>
       <div class="button-row" aria-label="Mission controls">
@@ -58,7 +58,7 @@
           <div class="field">
             <label>Mission</label>
             <select disabled>
-              <option>Launch → orbit → powered landing</option>
+              <option>Launch → 2 orbits → powered landing</option>
             </select>
           </div>
           <a class="mission-link" href="./">Return to orbit sandbox</a>
@@ -72,9 +72,9 @@
           </div>
           <div class="field">
             <label for="orbitCount">Orbits before return</label>
-            <input id="orbitCount" type="number" min="1" max="5" step="1" value="2" />
+            <input id="orbitCount" type="number" value="2" disabled />
           </div>
-          <p class="help-text">The autopilot applies actual thrust acceleration against Newtonian gravity, circularizes the orbit, coasts for the selected number of revolutions, then performs a controlled powered return.</p>
+          <p class="help-text">The autopilot applies actual thrust acceleration against Newtonian gravity, circularizes the orbit, coasts for two complete revolutions, then performs a controlled powered return.</p>
           <p class="help-text">This is an educational guided vehicle model: fixed reference mass, no staging or propellant depletion, and no detailed aerodynamic heating model.</p>
         </section>
 
