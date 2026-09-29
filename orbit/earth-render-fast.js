@@ -1,133 +1,271 @@
 (() => {
-  const DEG=Math.PI/180;
-  const LAND=[
-    [[-168,71],[-150,60],[-130,55],[-124,47],[-117,33],[-104,22],[-96,18],[-88,20],[-82,28],[-76,36],[-66,45],[-55,52],[-60,63],[-82,72],[-110,78],[-142,76]],
-    [[-82,12],[-72,11],[-60,7],[-48,2],[-36,-9],[-39,-23],[-49,-35],[-56,-52],[-68,-55],[-74,-38],[-77,-20],[-81,-3]],
-    [[-18,36],[4,37],[24,34],[39,25],[51,11],[43,-12],[34,-27],[18,-35],[4,-31],[-8,-18],[-16,4]],
-    [[-11,36],[-5,50],[12,60],[32,70],[65,76],[105,72],[139,64],[170,52],[164,40],[145,31],[126,22],[111,8],[93,9],[80,21],[65,25],[52,34],[39,38],[27,35],[17,43],[6,42]],
-    [[112,-11],[129,-10],[145,-14],[154,-26],[151,-39],[135,-44],[119,-38],[112,-26]],
-    [[-73,60],[-55,59],[-34,65],[-19,77],[-29,84],[-51,83],[-64,75]],
-    [[43,-13],[50,-17],[50,-26],[46,-25],[43,-18]],
-    [[130,31],[143,34],[146,43],[139,45],[132,39]]
-  ];
-  const DESERT=[
-    [[-16,16],[4,28],[29,31],[36,20],[30,12],[4,10]],
-    [[36,19],[56,30],[66,25],[55,16],[43,12]],
-    [[112,-20],[139,-18],[143,-30],[124,-34],[114,-28]],
-    [[67,35],[91,44],[106,39],[95,29],[74,29]]
-  ];
-  const wrapLon=lon=>{while(lon>180)lon-=360;while(lon<-180)lon+=360;return lon;};
-  function inside(lon,lat,poly){
-    let yes=false;
-    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
-      const xi=poly[i][0],yi=poly[i][1],xj=poly[j][0],yj=poly[j][1];
-      if(((yi>lat)!==(yj>lat))&&(lon<(xj-xi)*(lat-yi)/((yj-yi)||1e-9)+xi))yes=!yes;
+  const DAY_URL = 'https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg';
+  const NIGHT_URL = 'https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg';
+
+  const VERTEX = `
+    attribute vec2 a_position;
+    varying vec2 v_uv;
+    void main() {
+      v_uv = a_position * 0.5 + 0.5;
+      gl_Position = vec4(a_position, 0.0, 1.0);
     }
-    return yes;
-  }
-  const norm=v=>{const m=Math.hypot(v.x,v.y,v.z)||1;return{x:v.x/m,y:v.y/m,z:v.z/m};};
-  const mix=(a,b,t)=>a+(b-a)*t;
-  const mixColor=(a,b,t)=>[mix(a[0],b[0],t),mix(a[1],b[1],t),mix(a[2],b[2],t)];
-  const byte=x=>Math.max(0,Math.min(255,Math.round(x)));
+  `;
 
-  window.createEarthGlobeRenderer=function(){
-    const texture=document.createElement('canvas');
-    const tctx=texture.getContext('2d',{alpha:true});
-    const SIZE=192,MAP_W=360,MAP_H=180;
-    texture.width=texture.height=SIZE;
+  const FRAGMENT = `
+    precision mediump float;
+    varying vec2 v_uv;
+    uniform sampler2D u_day;
+    uniform sampler2D u_night;
+    uniform float u_hasDay;
+    uniform float u_hasNight;
+    uniform float u_yaw;
+    uniform float u_pitch;
+    uniform float u_rotation;
 
-    // Geographic classification is precomputed once. Globe rebuilds no longer
-    // run polygon intersection tests for every rendered pixel.
-    const surface=new Uint8Array(MAP_W*MAP_H);
-    for(let y=0;y<MAP_H;y++){
-      const lat=89.5-y;
-      for(let x=0;x<MAP_W;x++){
-        const lon=x-179.5,polar=Math.abs(lat)>70;
-        const land=polar||LAND.some(p=>inside(lon,lat,p));
-        const desert=land&&!polar&&DESERT.some(p=>inside(lon,lat,p));
-        surface[y*MAP_W+x]=polar?3:desert?2:land?1:0;
+    const float PI = 3.141592653589793;
+
+    vec3 inverseCamera(vec3 cam) {
+      float cy = cos(u_yaw), sy = sin(u_yaw);
+      float cp = cos(u_pitch), sp = sin(u_pitch);
+      float y1 = cp * cam.y + sp * cam.z;
+      float z = -sp * cam.y + cp * cam.z;
+      return vec3(
+        cy * cam.x + sy * y1,
+        -sy * cam.x + cy * y1,
+        z
+      );
+    }
+
+    void main() {
+      vec2 p = v_uv * 2.0 - 1.0;
+      float rr = dot(p, p);
+
+      // A cheap atmospheric shell outside the surface.
+      if (rr > 1.0) {
+        float radial = sqrt(rr);
+        if (radial > 1.085) discard;
+        float edge = 1.0 - smoothstep(1.0, 1.085, radial);
+        float alpha = edge * edge * 0.34;
+        gl_FragColor = vec4(0.22, 0.60, 1.0, alpha);
+        return;
       }
+
+      float z = sqrt(max(0.0, 1.0 - rr));
+      vec3 normalCam = normalize(vec3(p.x, p.y, z));
+      vec3 world = inverseCamera(normalCam);
+
+      float cr = cos(u_rotation), sr = sin(u_rotation);
+      vec3 body = vec3(
+        cr * world.x + sr * world.y,
+        -sr * world.x + cr * world.y,
+        world.z
+      );
+
+      float lon = atan(body.y, body.x);
+      float lat = asin(clamp(body.z, -1.0, 1.0));
+      vec2 texUv = vec2(fract(lon / (2.0 * PI) + 0.5), 0.5 - lat / PI);
+
+      vec3 fallback = mix(vec3(0.025, 0.16, 0.34), vec3(0.05, 0.42, 0.72), z);
+      vec3 day = u_hasDay > 0.5 ? texture2D(u_day, texUv).rgb : fallback;
+      vec3 night = u_hasNight > 0.5 ? texture2D(u_night, texUv).rgb : day * 0.045;
+
+      // Fixed sun direction in camera space gives a stable, readable terminator.
+      vec3 sunDir = normalize(vec3(-0.55, 0.33, 0.77));
+      float ndl = dot(normalCam, sunDir);
+      float daylight = smoothstep(-0.12, 0.16, ndl);
+      float diffuse = 0.20 + 0.80 * max(ndl, 0.0);
+
+      // Work approximately in linear space so the terminator is less muddy.
+      vec3 dayLinear = pow(max(day, vec3(0.0)), vec3(2.0));
+      vec3 litDay = pow(max(dayLinear * diffuse, vec3(0.0)), vec3(0.5));
+      vec3 litNight = night * 0.62;
+      vec3 color = mix(litNight, litDay, daylight);
+
+      // Detect blue ocean pixels and add a restrained sun glint.
+      float ocean = smoothstep(0.02, 0.20, day.b - max(day.r, day.g) * 0.78);
+      vec3 halfVector = normalize(sunDir + vec3(0.0, 0.0, 1.0));
+      float specular = pow(max(dot(normalCam, halfVector), 0.0), 48.0) * ocean * daylight;
+      color += vec3(0.42, 0.62, 0.76) * specular * 0.42;
+
+      // Atmospheric blue at the limb without the old uniform neon outline.
+      float limb = pow(1.0 - z, 2.7);
+      color += vec3(0.08, 0.34, 0.68) * limb * (0.22 + 0.34 * daylight);
+
+      gl_FragColor = vec4(color, 1.0);
     }
-    const surfaceAt=(lon,lat)=>{
-      const x=Math.max(0,Math.min(MAP_W-1,Math.floor(wrapLon(lon)+180)));
-      const y=Math.max(0,Math.min(MAP_H-1,Math.floor(90-lat)));
-      return surface[y*MAP_W+x];
+  `;
+
+  function compile(gl, type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      const message = gl.getShaderInfoLog(shader) || 'Unknown shader error';
+      gl.deleteShader(shader);
+      throw new Error(message);
+    }
+    return shader;
+  }
+
+  function makeProgram(gl) {
+    const program = gl.createProgram();
+    const vs = compile(gl, gl.VERTEX_SHADER, VERTEX);
+    const fs = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT);
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      const message = gl.getProgramInfoLog(program) || 'Unknown program link error';
+      gl.deleteProgram(program);
+      throw new Error(message);
+    }
+    return program;
+  }
+
+  function loadTexture(gl, url, texture, onReady) {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.decoding = 'async';
+    image.onload = () => {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      onReady();
+    };
+    image.onerror = () => {};
+    image.src = url;
+  }
+
+  function fallbackRenderer() {
+    return function drawFallback(ctx, { x, y, radius }) {
+      if (!Number.isFinite(radius) || radius <= 0) return;
+      const ocean = ctx.createRadialGradient(
+        x - radius * 0.34, y - radius * 0.38, radius * 0.06,
+        x, y, radius
+      );
+      ocean.addColorStop(0, '#8bd9ff');
+      ocean.addColorStop(0.28, '#2389c8');
+      ocean.addColorStop(0.72, '#074d8a');
+      ocean.addColorStop(1, '#03203d');
+      ctx.save();
+      ctx.shadowColor = 'rgba(80,175,255,.55)';
+      ctx.shadowBlur = Math.max(8, radius * .12);
+      ctx.fillStyle = ocean;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
+  }
+
+  window.createEarthGlobeRenderer = function createEarthGlobeRenderer() {
+    const globeCanvas = document.createElement('canvas');
+    let gl;
+    try {
+      gl = globeCanvas.getContext('webgl', {
+        alpha: true,
+        antialias: false,
+        depth: false,
+        stencil: false,
+        premultipliedAlpha: true,
+        preserveDrawingBuffer: false,
+        powerPreference: 'low-power'
+      });
+    } catch (_) {}
+
+    if (!gl) return fallbackRenderer();
+
+    let program;
+    try {
+      program = makeProgram(gl);
+    } catch (error) {
+      console.warn('Earth WebGL renderer unavailable:', error);
+      return fallbackRenderer();
+    }
+
+    gl.useProgram(program);
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1, -1,  1, -1, -1,  1,
+      -1,  1,  1, -1,  1,  1
+    ]), gl.STATIC_DRAW);
+    const position = gl.getAttribLocation(program, 'a_position');
+    gl.enableVertexAttribArray(position);
+    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+
+    const uniforms = {
+      yaw: gl.getUniformLocation(program, 'u_yaw'),
+      pitch: gl.getUniformLocation(program, 'u_pitch'),
+      rotation: gl.getUniformLocation(program, 'u_rotation'),
+      hasDay: gl.getUniformLocation(program, 'u_hasDay'),
+      hasNight: gl.getUniformLocation(program, 'u_hasNight'),
+      day: gl.getUniformLocation(program, 'u_day'),
+      night: gl.getUniformLocation(program, 'u_night')
     };
 
-    let cacheKey='';
-    function inverseCamera(cam,yaw,pitch){
-      const cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
-      const y1=cp*cam.y+sp*cam.z,z=-sp*cam.y+cp*cam.z;
-      return{x:cy*cam.x+sy*y1,y:-sy*cam.x+cy*y1,z};
-    }
-    const q=(v,step)=>Math.round(v/step);
-    function build(yaw,pitch,rotation){
-      const key=`${q(yaw,.012)}|${q(pitch,.012)}|${q(rotation,.018)}`;
-      if(key===cacheKey)return;
-      cacheKey=key;
-      const image=tctx.createImageData(SIZE,SIZE),data=image.data,half=SIZE/2;
-      const light=norm({x:-.48,y:.38,z:.79}),cr=Math.cos(rotation),sr=Math.sin(rotation);
+    const dayTexture = gl.createTexture();
+    const nightTexture = gl.createTexture();
+    let dayReady = false;
+    let nightReady = false;
 
-      for(let py=0;py<SIZE;py++){
-        const sy=((py+.5)-half)/half;
-        for(let px=0;px<SIZE;px++){
-          const sx=((px+.5)-half)/half,rr=sx*sx+sy*sy,idx=(py*SIZE+px)*4;
-          if(rr>1){data[idx+3]=0;continue;}
-          const cam={x:sx,y:-sy,z:Math.sqrt(Math.max(0,1-rr))};
-          const w=inverseCamera(cam,yaw,pitch);
-          const bx=cr*w.x+sr*w.y,by=-sr*w.x+cr*w.y,bz=w.z;
-          const lon=wrapLon(Math.atan2(by,bx)/DEG);
-          const lat=Math.asin(Math.max(-1,Math.min(1,bz)))/DEG;
-          const kind=surfaceAt(lon,lat),land=kind>0,polar=kind===3,desert=kind===2;
+    // Initialize 1x1 placeholders so drawing is valid immediately.
+    [dayTexture, nightTexture].forEach((texture, index) => {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      const pixel = index === 0 ? new Uint8Array([18, 91, 150]) : new Uint8Array([2, 5, 12]);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, pixel);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    });
 
-          let base;
-          if(polar)base=[226,240,244];
-          else if(desert)base=[177,154,86];
-          else if(land){
-            const lush=.5+.5*Math.sin((lon*.10+lat*.17)*DEG*10);
-            base=mixColor([52,103,49],[92,133,62],lush*.55);
-          }else{
-            const deep=.45+.55*Math.max(0,-lat/90);
-            base=mixColor([10,70,122],[13,92,154],deep);
-          }
+    loadTexture(gl, DAY_URL, dayTexture, () => { dayReady = true; });
+    loadTexture(gl, NIGHT_URL, nightTexture, () => { nightReady = true; });
 
-          const diffuse=Math.max(0,cam.x*light.x+cam.y*light.y+cam.z*light.z);
-          let illumination=.27+.80*diffuse;
-          illumination*=.78+.22*Math.pow(Math.max(0,cam.z),.38);
-          if(!land&&!polar){
-            const spec=Math.pow(diffuse,18)*Math.pow(cam.z,3);
-            base=mixColor(base,[175,222,241],spec*.55);
-          }
-
-          const cloudNoise=
-            Math.sin((lon*.16+lat*.09+rotation/DEG*.22)*DEG*8)+
-            .65*Math.sin((lon*.07-lat*.21)*DEG*11)+
-            .35*Math.sin((lon+lat*1.7)*DEG*17);
-          const band=Math.exp(-Math.pow(lat/34,2));
-          const cloud=cloudNoise>1.05?Math.min(.58,(cloudNoise-1.05)*.48+band*.08):0;
-          if(cloud>0)base=mixColor(base,[236,245,248],cloud);
-          const city=land&&!polar&&diffuse<.06&&Math.sin(lon*2.7*DEG+lat*4.1*DEG)*Math.sin(lon*5.3*DEG-lat*1.9*DEG)>.72;
-
-          data[idx]=byte(base[0]*illumination+(city?46:0));
-          data[idx+1]=byte(base[1]*illumination+(city?34:0));
-          data[idx+2]=byte(base[2]*illumination+(city?10:0));
-          data[idx+3]=byte(255*(rr>.965?Math.max(0,(1-rr)/.035):1));
-        }
-      }
-      tctx.putImageData(image,0,0);
+    let renderSize = 0;
+    function ensureSize(radius) {
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      // Enough detail for typical on-screen Earth size, capped to keep GPU/copy cost tiny.
+      const desired = Math.max(192, Math.min(512, Math.ceil(radius * 2.18 * dpr / 64) * 64));
+      if (desired === renderSize) return;
+      renderSize = desired;
+      globeCanvas.width = desired;
+      globeCanvas.height = desired;
+      gl.viewport(0, 0, desired, desired);
     }
 
-    return function(ctx,{x,y,radius,yaw,pitch,rotation}){
-      if(!Number.isFinite(radius)||radius<=0)return;
-      build(yaw,pitch,rotation);
-      ctx.save();ctx.shadowColor='rgba(74,169,255,.72)';ctx.shadowBlur=Math.max(10,radius*.13);
-      ctx.drawImage(texture,x-radius,y-radius,radius*2,radius*2);ctx.restore();
+    return function drawEarthGlobe(ctx, { x, y, radius, yaw, pitch, rotation }) {
+      if (!Number.isFinite(radius) || radius <= 0) return;
+      ensureSize(radius);
 
-      const atm=ctx.createRadialGradient(x,y,radius*.91,x,y,radius*1.08);
-      atm.addColorStop(0,'rgba(83,177,255,0)');atm.addColorStop(.68,'rgba(87,185,255,.04)');atm.addColorStop(.83,'rgba(95,194,255,.27)');atm.addColorStop(1,'rgba(95,194,255,0)');
-      ctx.fillStyle=atm;ctx.beginPath();ctx.arc(x,y,radius*1.08,0,Math.PI*2);ctx.fill();
-      ctx.strokeStyle='rgba(151,216,255,.50)';ctx.lineWidth=Math.max(1.1,radius*.008);
-      ctx.beginPath();ctx.arc(x,y,radius+ctx.lineWidth*.3,0,Math.PI*2);ctx.stroke();
+      gl.useProgram(program);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      gl.uniform1f(uniforms.yaw, yaw || 0);
+      gl.uniform1f(uniforms.pitch, pitch || 0);
+      gl.uniform1f(uniforms.rotation, rotation || 0);
+      gl.uniform1f(uniforms.hasDay, dayReady ? 1 : 0);
+      gl.uniform1f(uniforms.hasNight, nightReady ? 1 : 0);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, dayTexture);
+      gl.uniform1i(uniforms.day, 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, nightTexture);
+      gl.uniform1i(uniforms.night, 1);
+
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+      // Draw slightly larger than the physical radius to preserve the shader atmosphere shell.
+      const outer = radius * 1.085;
+      ctx.drawImage(globeCanvas, x - outer, y - outer, outer * 2, outer * 2);
     };
   };
 })();
