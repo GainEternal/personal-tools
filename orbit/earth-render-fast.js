@@ -23,6 +23,7 @@
     uniform float u_rotation;
 
     const float PI = 3.141592653589793;
+    const float SURFACE_RADIUS = 0.92;
 
     vec3 inverseCamera(vec3 cam) {
       float cy = cos(u_yaw), sy = sin(u_yaw);
@@ -38,9 +39,10 @@
 
     void main() {
       vec2 p = v_uv * 2.0 - 1.0;
-      float rr = dot(p, p);
+      vec2 q = p / SURFACE_RADIUS;
+      float rr = dot(q, q);
 
-      // A cheap atmospheric shell outside the surface.
+      // Reserve real pixel margin around the physical sphere for atmosphere.
       if (rr > 1.0) {
         float radial = sqrt(rr);
         if (radial > 1.085) discard;
@@ -51,7 +53,7 @@
       }
 
       float z = sqrt(max(0.0, 1.0 - rr));
-      vec3 normalCam = normalize(vec3(p.x, p.y, z));
+      vec3 normalCam = normalize(vec3(q.x, q.y, z));
       vec3 world = inverseCamera(normalCam);
 
       float cr = cos(u_rotation), sr = sin(u_rotation);
@@ -69,25 +71,21 @@
       vec3 day = u_hasDay > 0.5 ? texture2D(u_day, texUv).rgb : fallback;
       vec3 night = u_hasNight > 0.5 ? texture2D(u_night, texUv).rgb : day * 0.045;
 
-      // Fixed sun direction in camera space gives a stable, readable terminator.
       vec3 sunDir = normalize(vec3(-0.55, 0.33, 0.77));
       float ndl = dot(normalCam, sunDir);
       float daylight = smoothstep(-0.12, 0.16, ndl);
       float diffuse = 0.20 + 0.80 * max(ndl, 0.0);
 
-      // Work approximately in linear space so the terminator is less muddy.
       vec3 dayLinear = pow(max(day, vec3(0.0)), vec3(2.0));
       vec3 litDay = pow(max(dayLinear * diffuse, vec3(0.0)), vec3(0.5));
       vec3 litNight = night * 0.62;
       vec3 color = mix(litNight, litDay, daylight);
 
-      // Detect blue ocean pixels and add a restrained sun glint.
       float ocean = smoothstep(0.02, 0.20, day.b - max(day.r, day.g) * 0.78);
       vec3 halfVector = normalize(sunDir + vec3(0.0, 0.0, 1.0));
       float specular = pow(max(dot(normalCam, halfVector), 0.0), 48.0) * ocean * daylight;
       color += vec3(0.42, 0.62, 0.76) * specular * 0.42;
 
-      // Atmospheric blue at the limb without the old uniform neon outline.
       float limb = pow(1.0 - z, 2.7);
       color += vec3(0.08, 0.34, 0.68) * limb * (0.22 + 0.34 * daylight);
 
@@ -216,7 +214,6 @@
     let dayReady = false;
     let nightReady = false;
 
-    // Initialize 1x1 placeholders so drawing is valid immediately.
     [dayTexture, nightTexture].forEach((texture, index) => {
       gl.bindTexture(gl.TEXTURE_2D, texture);
       const pixel = index === 0 ? new Uint8Array([18, 91, 150]) : new Uint8Array([2, 5, 12]);
@@ -231,8 +228,7 @@
     let renderSize = 0;
     function ensureSize(radius) {
       const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-      // Enough detail for typical on-screen Earth size, capped to keep GPU/copy cost tiny.
-      const desired = Math.max(192, Math.min(512, Math.ceil(radius * 2.18 * dpr / 64) * 64));
+      const desired = Math.max(192, Math.min(512, Math.ceil(radius * 2.36 * dpr / 64) * 64));
       if (desired === renderSize) return;
       renderSize = desired;
       globeCanvas.width = desired;
@@ -263,8 +259,7 @@
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-      // Draw slightly larger than the physical radius to preserve the shader atmosphere shell.
-      const outer = radius * 1.085;
+      const outer = radius / 0.92;
       ctx.drawImage(globeCanvas, x - outer, y - outer, outer * 2, outer * 2);
     };
   };
