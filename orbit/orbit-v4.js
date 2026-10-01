@@ -389,10 +389,10 @@
     const dx=e.clientX-state.pointer.x,dy=e.clientY-state.pointer.y;
     state.pointer.x=e.clientX;state.pointer.y=e.clientY;
 
-    // Globe-style interaction. Longitude is deliberately unbounded so the user
-    // can spin sideways forever. Latitude stops exactly at the geographic poles.
-    state.camera.yaw+=dx*.008;
-    state.camera.pitch=Math.max(MIN_GLOBE_PITCH,Math.min(MAX_GLOBE_PITCH,state.camera.pitch-dy*.008));
+    // Camera-style globe interaction. Longitude is deliberately unbounded so
+    // sideways rotation can continue forever. Latitude still stops at the poles.
+    state.camera.yaw-=dx*.008;
+    state.camera.pitch=Math.max(MIN_GLOBE_PITCH,Math.min(MAX_GLOBE_PITCH,state.camera.pitch+dy*.008));
   });
   canvas.addEventListener('pointerup',()=>state.pointer.down=false);
   canvas.addEventListener('pointercancel',()=>state.pointer.down=false);
