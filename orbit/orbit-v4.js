@@ -381,10 +381,10 @@
     const dx=e.clientX-state.pointer.x,dy=e.clientY-state.pointer.y;
     state.pointer.x=e.clientX;state.pointer.y=e.clientY;
 
-    // Horizontal direction is intentionally unchanged. Vertical drag is inverted
-    // relative to the prior version while preserving the geographic pole limits.
-    state.camera.yaw-=dx*.008;
-    state.camera.pitch=Math.max(MIN_GLOBE_PITCH,Math.min(MAX_GLOBE_PITCH,state.camera.pitch-dy*.008));
+    // Globe drag directions matched to the user's expected camera interaction.
+    // Horizontal remains unbounded; vertical still stops at the geographic poles.
+    state.camera.yaw+=dx*.008;
+    state.camera.pitch=Math.max(MIN_GLOBE_PITCH,Math.min(MAX_GLOBE_PITCH,state.camera.pitch+dy*.008));
   });
   canvas.addEventListener('pointerup',()=>state.pointer.down=false);
   canvas.addEventListener('pointercancel',()=>state.pointer.down=false);
