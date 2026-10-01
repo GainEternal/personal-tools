@@ -40,12 +40,6 @@
     ]
   };
 
-  // Camera convention for free globe interaction:
-  //   longitude = yaw + PI/2
-  //   latitude  = pitch + PI/2
-  // This makes longitude 0 / latitude 0 look straight down over Greenwich/Africa,
-  // keeps geographic north at the top of the screen, allows unlimited longitude,
-  // and lets latitude clamp naturally at the poles.
   const HOME_YAW=-Math.PI/2;
   const HOME_PITCH=-Math.PI/2;
   const MIN_GLOBE_PITCH=-Math.PI;
@@ -203,8 +197,6 @@
     return {yaw:lon-Math.PI/2,pitch:lat-Math.PI/2};
   }
   function setFollowStartingAngle(){
-    // In centered-follow mode the rocket is the origin of the screen. Aim the
-    // view back toward Earth, while preserving the same north-up globe convention.
     const back=vec.scale(state.pos,-1);
     const camera=cameraForSubpoint(back);
     state.camera.yaw=camera.yaw;
@@ -389,10 +381,10 @@
     const dx=e.clientX-state.pointer.x,dy=e.clientY-state.pointer.y;
     state.pointer.x=e.clientX;state.pointer.y=e.clientY;
 
-    // Camera-style globe interaction. Longitude is deliberately unbounded so
-    // sideways rotation can continue forever. Latitude still stops at the poles.
+    // Horizontal direction is intentionally unchanged. Vertical drag is inverted
+    // relative to the prior version while preserving the geographic pole limits.
     state.camera.yaw-=dx*.008;
-    state.camera.pitch=Math.max(MIN_GLOBE_PITCH,Math.min(MAX_GLOBE_PITCH,state.camera.pitch+dy*.008));
+    state.camera.pitch=Math.max(MIN_GLOBE_PITCH,Math.min(MAX_GLOBE_PITCH,state.camera.pitch-dy*.008));
   });
   canvas.addEventListener('pointerup',()=>state.pointer.down=false);
   canvas.addEventListener('pointercancel',()=>state.pointer.down=false);
