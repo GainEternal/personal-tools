@@ -40,13 +40,24 @@
     ]
   };
 
+  // Camera convention for free globe interaction:
+  //   longitude = yaw + PI/2
+  //   latitude  = pitch + PI/2
+  // This makes longitude 0 / latitude 0 look straight down over Greenwich/Africa,
+  // keeps geographic north at the top of the screen, allows unlimited longitude,
+  // and lets latitude clamp naturally at the poles.
+  const HOME_YAW=-Math.PI/2;
+  const HOME_PITCH=-Math.PI/2;
+  const MIN_GLOBE_PITCH=-Math.PI;
+  const MAX_GLOBE_PITCH=0;
+
   const state={
     bodyKey:'earth',
     pos:{x:EARTH_RADIUS+HIGH_ORBIT_ALTITUDE,y:0,z:0},
     vel:{x:0,y:HIGH_ORBIT_SPEED,z:0},
     elapsed:0,playing:true,crashed:false,trail:[],prediction:[],predictionExtent:EARTH_RADIUS*1.2,
     explosion:null,status:'Circular',lastFrame:performance.now(),lastRocketAngle:-Math.PI/2,
-    camera:{yaw:-.55,pitch:.5,zoom:1},pointer:{down:false,x:0,y:0}
+    camera:{yaw:HOME_YAW,pitch:HOME_PITCH,zoom:1},pointer:{down:false,x:0,y:0}
   };
   const vec={
     add:(a,b)=>({x:a.x+b.x,y:a.y+b.y,z:a.z+b.z}),
@@ -182,21 +193,35 @@
   }
 
   function homeCamera(){
-    state.camera={yaw:-.55,pitch:.5,zoom:1};
+    state.camera={yaw:HOME_YAW,pitch:HOME_PITCH,zoom:1};
     els.cameraPreset.value='free';
   }
+  function cameraForSubpoint(direction){
+    const u=vec.unit(direction);
+    const lon=Math.atan2(u.y,u.x);
+    const lat=Math.asin(Math.max(-1,Math.min(1,u.z)));
+    return {yaw:lon-Math.PI/2,pitch:lat-Math.PI/2};
+  }
   function setFollowStartingAngle(){
-    const a=Math.atan2(state.pos.y,state.pos.x);
-    state.camera.yaw=-a-.7;
-    state.camera.pitch=.38;
+    // In centered-follow mode the rocket is the origin of the screen. Aim the
+    // view back toward Earth, while preserving the same north-up globe convention.
+    const back=vec.scale(state.pos,-1);
+    const camera=cameraForSubpoint(back);
+    state.camera.yaw=camera.yaw;
+    state.camera.pitch=camera.pitch;
   }
   function applyCameraPreset(){
     const mode=els.cameraPreset.value;
-    if(mode==='top'){state.camera.yaw=0;state.camera.pitch=Math.PI/2-.01;}
-    else if(mode==='side'){state.camera.yaw=0;state.camera.pitch=.02;}
-    else if(mode==='track'){
-      const a=Math.atan2(state.pos.y,state.pos.x);
-      state.camera.yaw=-a-.7;state.camera.pitch=.38;
+    if(mode==='top'){
+      state.camera.yaw=HOME_YAW;
+      state.camera.pitch=0;
+    }else if(mode==='side'){
+      state.camera.yaw=HOME_YAW;
+      state.camera.pitch=HOME_PITCH;
+    }else if(mode==='track'){
+      const camera=cameraForSubpoint(state.pos);
+      state.camera.yaw=camera.yaw;
+      state.camera.pitch=camera.pitch;
     }
   }
   function cameraCenter(){
@@ -361,8 +386,13 @@
   });
   canvas.addEventListener('pointermove',e=>{
     if(!state.pointer.down)return;
-    const dx=e.clientX-state.pointer.x,dy=e.clientY-state.pointer.y;state.pointer.x=e.clientX;state.pointer.y=e.clientY;
-    state.camera.yaw+=dx*.008;state.camera.pitch=Math.max(-1.45,Math.min(1.45,state.camera.pitch-dy*.008));
+    const dx=e.clientX-state.pointer.x,dy=e.clientY-state.pointer.y;
+    state.pointer.x=e.clientX;state.pointer.y=e.clientY;
+
+    // Globe-style interaction. Longitude is deliberately unbounded so the user
+    // can spin sideways forever. Latitude stops exactly at the geographic poles.
+    state.camera.yaw+=dx*.008;
+    state.camera.pitch=Math.max(MIN_GLOBE_PITCH,Math.min(MAX_GLOBE_PITCH,state.camera.pitch-dy*.008));
   });
   canvas.addEventListener('pointerup',()=>state.pointer.down=false);
   canvas.addEventListener('pointercancel',()=>state.pointer.down=false);
