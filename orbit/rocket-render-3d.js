@@ -161,9 +161,20 @@
       gl.uniformMatrix3fv(rot,false,rotationMatrix(angle,tilt,roll));
       gl.drawArrays(gl.TRIANGLES,0,geo.length/9);
       const s=Math.max(22,drawSize);
+
+      // Recreate the soft blue halo from the original 2D rocket.  The explicit
+      // radial gradient is more reliable than canvas shadowBlur on a transparent
+      // WebGL source image and stays visually stable at small rocket sizes.
       ctx.save();
-      ctx.shadowColor='rgba(120,195,255,.45)';
-      ctx.shadowBlur=Math.max(4,s*.14);
+      const halo=ctx.createRadialGradient(x,y,s*.16,x,y,s*.72);
+      halo.addColorStop(0,'rgba(125,205,255,.28)');
+      halo.addColorStop(.42,'rgba(100,185,255,.15)');
+      halo.addColorStop(1,'rgba(80,155,255,0)');
+      ctx.fillStyle=halo;
+      ctx.beginPath();ctx.arc(x,y,s*.72,0,Math.PI*2);ctx.fill();
+
+      ctx.shadowColor='rgba(120,195,255,.70)';
+      ctx.shadowBlur=Math.max(7,s*.22);
       ctx.drawImage(c,x-s/2,y-s/2,s,s);
       ctx.restore();
     };
