@@ -42,13 +42,27 @@
       vec2 q = p / SURFACE_RADIUS;
       float rr = dot(q, q);
 
-      // Reserve real pixel margin around the physical sphere for atmosphere.
+      // Thin, view-dependent atmosphere outside the physical sphere.
+      // A narrow bright limb sits at the horizon, with a much fainter haze that
+      // falls away exponentially.  The night side keeps only a trace of scatter.
       if (rr > 1.0) {
         float radial = sqrt(rr);
-        if (radial > 1.085) discard;
-        float edge = 1.0 - smoothstep(1.0, 1.085, radial);
-        float alpha = edge * edge * 0.34;
-        gl_FragColor = vec4(0.22, 0.60, 1.0, alpha);
+        if (radial > 1.060) discard;
+
+        float height = (radial - 1.0) / 0.060;
+        vec3 sunDir = normalize(vec3(-0.55, 0.33, 0.77));
+        vec3 tangentNormal = normalize(vec3(q.x, q.y, 0.025));
+        float sunFacing = smoothstep(-0.28, 0.22, dot(tangentNormal, sunDir));
+
+        float tightRim = exp(-height * 15.0);
+        float outerHaze = exp(-height * 4.6) * (1.0 - smoothstep(0.72, 1.0, height));
+        float lighting = mix(0.13, 1.0, sunFacing);
+        float alpha = (0.23 * tightRim + 0.075 * outerHaze) * lighting;
+
+        vec3 horizonBlue = vec3(0.28, 0.68, 1.0);
+        vec3 highBlue = vec3(0.10, 0.34, 0.88);
+        vec3 atmosphereColor = mix(horizonBlue, highBlue, smoothstep(0.0, 0.85, height));
+        gl_FragColor = vec4(atmosphereColor, alpha);
         return;
       }
 
@@ -86,8 +100,12 @@
       float specular = pow(max(dot(normalCam, halfVector), 0.0), 48.0) * ocean * daylight;
       color += vec3(0.42, 0.62, 0.76) * specular * 0.42;
 
-      float limb = pow(1.0 - z, 2.7);
-      color += vec3(0.08, 0.34, 0.68) * limb * (0.22 + 0.34 * daylight);
+      // Atmospheric scattering seen through the tangent path at the horizon.
+      // Keep it narrow so the atmosphere reads as a thin layer instead of a ring.
+      float limb = pow(1.0 - z, 5.2);
+      float horizonLight = mix(0.10, 1.0, daylight);
+      vec3 limbColor = mix(vec3(0.07, 0.24, 0.58), vec3(0.22, 0.62, 0.96), daylight);
+      color += limbColor * limb * 0.34 * horizonLight;
 
       gl_FragColor = vec4(color, 1.0);
     }
