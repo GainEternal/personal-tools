@@ -70,6 +70,7 @@
   const applyCameraPreset=globeCamera.applyPreset;
   const cameraCenter=globeCamera.cameraCenter;
   const rotatePoint=globeCamera.rotatePoint;
+  const orientationBasis=globeCamera.orientationBasis;
   const isOccludedBySphere=globeCamera.isOccludedBySphere;
 
   const body=()=>BODIES[state.bodyKey];
@@ -271,29 +272,37 @@
   function drawMarker(p){ctx.save();ctx.shadowColor='rgba(157,240,208,.75)';ctx.shadowBlur=12;ctx.fillStyle='#d9fff1';ctx.beginPath();ctx.arc(p.x,p.y,5,0,Math.PI*2);ctx.fill();ctx.restore();}
   function drawRocket(frame,p){
     const speed=vec.mag(state.vel);
-    let tilt=0;
+    let foreshorten=1;
+
     if(speed>1e-6){
-      const ahead=project(vec.add(state.pos,vec.scale(state.vel,frame.extent*.06/speed)),frame);
-      const dx=ahead.x-p.x,dy=ahead.y-p.y;
-      const a=Math.atan2(dy,dx);
-      if(Number.isFinite(a))state.lastRocketAngle=a;
-      const dz=((ahead.depth||0)-(p.depth||0))*frame.scale;
-      tilt=Math.atan2(dz,Math.max(1e-6,Math.hypot(dx,dy)));
-    }
+      const basis=orientationBasis(state.vel,state.pos);
+      const screenAngle=Math.atan2(-basis[1],basis[0]);
+      if(Number.isFinite(screenAngle))state.lastRocketAngle=screenAngle;
+      foreshorten=Math.max(.18,Math.hypot(basis[0],basis[1]));
 
-    // Preserve the familiar orange/yellow exhaust as a 2D glow behind the 3D vehicle.
-    if(state.playing&&!state.crashed){
-      const foreshorten=Math.max(.28,Math.cos(tilt));
-      const flick=1+.12*Math.sin(state.elapsed*4.7);
-      ctx.save();ctx.translate(p.x,p.y);ctx.rotate(state.lastRocketAngle);
-      const flame=ctx.createLinearGradient(-24*foreshorten,0,-9,0);
-      flame.addColorStop(0,'rgba(255,80,30,.1)');flame.addColorStop(.45,'#ff7c31');flame.addColorStop(1,'#ffe56c');
-      ctx.fillStyle=flame;ctx.beginPath();ctx.moveTo(-10,-3);ctx.lineTo(-24*flick*foreshorten,0);ctx.lineTo(-10,3);ctx.closePath();ctx.fill();ctx.restore();
-    }
+      // Preserve the familiar exhaust, but project it from the same 3D forward
+      // vector used by the rocket model so it tracks camera rotation correctly.
+      if(state.playing&&!state.crashed){
+        const flick=1+.12*Math.sin(state.elapsed*4.7);
+        ctx.save();ctx.translate(p.x,p.y);ctx.rotate(state.lastRocketAngle);
+        const flame=ctx.createLinearGradient(-24*foreshorten,0,-9,0);
+        flame.addColorStop(0,'rgba(255,80,30,.1)');
+        flame.addColorStop(.45,'#ff7c31');
+        flame.addColorStop(1,'#ffe56c');
+        ctx.fillStyle=flame;
+        ctx.beginPath();
+        ctx.moveTo(-10,-3);
+        ctx.lineTo(-24*flick*foreshorten,0);
+        ctx.lineTo(-10,3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
 
-    if(rocket3D){
-      rocket3D(ctx,{x:p.x,y:p.y,size:44,angle:-state.lastRocketAngle,tilt,roll:.34});
-      return;
+      if(rocket3D){
+        rocket3D(ctx,{x:p.x,y:p.y,size:44,basis});
+        return;
+      }
     }
 
     // WebGL fallback: retain the previous flat rocket.
