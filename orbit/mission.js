@@ -2,6 +2,7 @@
   const canvas = document.getElementById('orbitCanvas');
   const ctx = canvas.getContext('2d');
   const earthGlobe = window.createEarthGlobeRenderer ? window.createEarthGlobeRenderer() : null;
+  const rocket3D = window.createRocketRenderer3D ? window.createRocketRenderer3D() : null;
   const $ = id => document.getElementById(id);
 
   const els = {
@@ -313,7 +314,7 @@
   }
   function project(p,frame){
     const q=rotatePoint(vec.sub(p,frame.center));
-    return {x:frame.width/2+q.x*frame.scale,y:frame.height/2-q.y*frame.scale};
+    return {x:frame.width/2+q.x*frame.scale,y:frame.height/2-q.y*frame.scale,depth:q.z};
   }
 
   function drawStars(frame){
@@ -351,16 +352,31 @@
   }
   function drawRocket(frame){
     const p=project(state.pos,frame);
-    let headingVector=state.thrustMN>.05?state.thrust:state.vel;
+    const headingVector=state.thrustMN>.05?state.thrust:state.vel;
+    let tilt=0;
     if(vec.mag(headingVector)>1e-8){
       const ahead=project(vec.add(state.pos,vec.scale(vec.unit(headingVector),frame.extent*.06)),frame);
-      const a=Math.atan2(ahead.y-p.y,ahead.x-p.x);if(Number.isFinite(a))state.lastRocketAngle=a;
+      const dx=ahead.x-p.x,dy=ahead.y-p.y;
+      const a=Math.atan2(dy,dx);if(Number.isFinite(a))state.lastRocketAngle=a;
+      const dz=((ahead.depth||0)-(p.depth||0))*frame.scale;
+      tilt=Math.atan2(dz,Math.max(1e-6,Math.hypot(dx,dy)));
     }
-    ctx.save();ctx.translate(p.x,p.y);ctx.rotate(state.lastRocketAngle);ctx.shadowColor='rgba(120,195,255,.6)';ctx.shadowBlur=8;
+
     if(state.thrustMN>.05){
       const intensity=clamp(state.thrustMN/8,0.35,1.25),flick=1+.1*Math.sin(state.elapsed*7);
-      const flame=ctx.createLinearGradient(-27*intensity,0,-9,0);flame.addColorStop(0,'rgba(255,70,20,.08)');flame.addColorStop(.45,'#ff7930');flame.addColorStop(1,'#ffe66c');ctx.fillStyle=flame;ctx.beginPath();ctx.moveTo(-10,-3.2);ctx.lineTo(-25*intensity*flick,0);ctx.lineTo(-10,3.2);ctx.closePath();ctx.fill();
+      const foreshorten=Math.max(.28,Math.cos(tilt));
+      ctx.save();ctx.translate(p.x,p.y);ctx.rotate(state.lastRocketAngle);
+      const flame=ctx.createLinearGradient(-27*intensity*foreshorten,0,-9,0);
+      flame.addColorStop(0,'rgba(255,70,20,.08)');flame.addColorStop(.45,'#ff7930');flame.addColorStop(1,'#ffe66c');
+      ctx.fillStyle=flame;ctx.beginPath();ctx.moveTo(-10,-3.2);ctx.lineTo(-25*intensity*flick*foreshorten,0);ctx.lineTo(-10,3.2);ctx.closePath();ctx.fill();ctx.restore();
     }
+
+    if(rocket3D){
+      rocket3D(ctx,{x:p.x,y:p.y,size:46,angle:-state.lastRocketAngle,tilt,roll:.34});
+      return;
+    }
+
+    ctx.save();ctx.translate(p.x,p.y);ctx.rotate(state.lastRocketAngle);ctx.shadowColor='rgba(120,195,255,.6)';ctx.shadowBlur=8;
     ctx.fillStyle='#dc3f46';ctx.beginPath();ctx.moveTo(-8,-5);ctx.lineTo(-13,-10);ctx.lineTo(-12,-3);ctx.closePath();ctx.fill();ctx.beginPath();ctx.moveTo(-8,5);ctx.lineTo(-13,10);ctx.lineTo(-12,3);ctx.closePath();ctx.fill();
     ctx.fillStyle='#f1f5f8';ctx.strokeStyle='#a7bbca';ctx.lineWidth=1.1;ctx.beginPath();ctx.moveTo(12,0);ctx.quadraticCurveTo(7,-5.2,-6,-5.2);ctx.lineTo(-10,-3.6);ctx.lineTo(-10,3.6);ctx.lineTo(-6,5.2);ctx.quadraticCurveTo(7,5.2,12,0);ctx.closePath();ctx.fill();ctx.stroke();
     ctx.fillStyle='#e44b50';ctx.beginPath();ctx.moveTo(12,0);ctx.quadraticCurveTo(9,-3.4,6.8,-4.3);ctx.lineTo(6.8,4.3);ctx.quadraticCurveTo(9,3.4,12,0);ctx.closePath();ctx.fill();
