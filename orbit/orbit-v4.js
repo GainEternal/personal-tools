@@ -42,18 +42,13 @@
     ]
   };
 
-  const HOME_YAW=-Math.PI/2;
-  const HOME_PITCH=-Math.PI/2;
-  const MIN_GLOBE_PITCH=-Math.PI;
-  const MAX_GLOBE_PITCH=0;
-
   const state={
     bodyKey:'earth',
     pos:{x:EARTH_RADIUS+HIGH_ORBIT_ALTITUDE,y:0,z:0},
     vel:{x:0,y:HIGH_ORBIT_SPEED,z:0},
     elapsed:0,playing:true,crashed:false,trail:[],prediction:[],predictionExtent:EARTH_RADIUS*1.2,
     explosion:null,status:'Circular',lastFrame:performance.now(),lastRocketAngle:-Math.PI/2,
-    camera:{yaw:HOME_YAW,pitch:HOME_PITCH,zoom:1},pointer:{down:false,x:0,y:0}
+    camera:{yaw:window.OrbitGlobeCamera.HOME_YAW,pitch:window.OrbitGlobeCamera.HOME_PITCH,zoom:1},pointer:{down:false,x:0,y:0}
   };
   const vec={
     add:(a,b)=>({x:a.x+b.x,y:a.y+b.y,z:a.z+b.z}),
@@ -63,6 +58,19 @@
     cross:(a,b)=>({x:a.y*b.z-a.z*b.y,y:a.z*b.x-a.x*b.z,z:a.x*b.y-a.y*b.x}),
     unit:a=>{const m=Math.hypot(a.x,a.y,a.z);return m>1e-12?{x:a.x/m,y:a.y/m,z:a.z/m}:{x:1,y:0,z:0};}
   };
+  const globeCamera=window.OrbitGlobeCamera.create({
+    canvas,
+    state,
+    cameraPreset:els.cameraPreset,
+    getObjectPosition:()=>state.pos,
+    homePreset:'free'
+  });
+  const homeCamera=globeCamera.home;
+  const setFollowStartingAngle=globeCamera.setFollowStartingAngle;
+  const applyCameraPreset=globeCamera.applyPreset;
+  const cameraCenter=globeCamera.cameraCenter;
+  const rotatePoint=globeCamera.rotatePoint;
+
   const body=()=>BODIES[state.bodyKey];
   const mu=()=>body().mu*Number(els.gravity.value);
 
@@ -188,50 +196,11 @@
     renderPresets();homeCamera();resetSimulation();
   }
 
-  function homeCamera(){
-    state.camera={yaw:HOME_YAW,pitch:HOME_PITCH,zoom:1};
-    els.cameraPreset.value='free';
-  }
-  function cameraForSubpoint(direction){
-    const u=vec.unit(direction);
-    const lon=Math.atan2(u.y,u.x);
-    const lat=Math.asin(Math.max(-1,Math.min(1,u.z)));
-    return {yaw:lon-Math.PI/2,pitch:lat-Math.PI/2};
-  }
-  function setFollowStartingAngle(){
-    const back=vec.scale(state.pos,-1);
-    const camera=cameraForSubpoint(back);
-    state.camera.yaw=camera.yaw;
-    state.camera.pitch=camera.pitch;
-  }
-  function applyCameraPreset(){
-    const mode=els.cameraPreset.value;
-    if(mode==='top'){
-      state.camera.yaw=HOME_YAW;
-      state.camera.pitch=0;
-    }else if(mode==='side'){
-      state.camera.yaw=HOME_YAW;
-      state.camera.pitch=HOME_PITCH;
-    }else if(mode==='track'){
-      const camera=cameraForSubpoint(state.pos);
-      state.camera.yaw=camera.yaw;
-      state.camera.pitch=camera.pitch;
-    }
-  }
-  function cameraCenter(){
-    return els.cameraPreset.value==='follow'?state.pos:{x:0,y:0,z:0};
-  }
-
   function resizeCanvas(){
     const rect=canvas.getBoundingClientRect(),dpr=Math.min(window.devicePixelRatio||1,2);
     const w=Math.max(1,Math.round(rect.width*dpr)),h=Math.max(1,Math.round(rect.height*dpr));
     if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
     ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
-  function rotatePoint(p){
-    const cy=Math.cos(state.camera.yaw),sy=Math.sin(state.camera.yaw),cp=Math.cos(state.camera.pitch),sp=Math.sin(state.camera.pitch);
-    const x1=cy*p.x-sy*p.y,y1=sy*p.x+cy*p.y;
-    return {x:x1,y:cp*y1-sp*p.z,z:sp*y1+cp*p.z};
   }
   function makeFrame(width,height){
     const current=Math.max(vec.mag(state.pos),body().radius*1.2);
@@ -398,29 +367,9 @@
   els.simSpeed.addEventListener('input',()=>{els.simSpeedOut.textContent=`${Number(els.simSpeed.value).toFixed(2).replace(/\.00$/,'')}×`;});
   els.playPause.addEventListener('click',()=>{if(state.crashed)return;state.playing=!state.playing;els.playPause.textContent=state.playing?'Pause':'Play';});
   els.restart.addEventListener('click',resetSimulation);els.homeCamera.addEventListener('click',homeCamera);
-  els.cameraPreset.addEventListener('change',()=>{
-    if(els.cameraPreset.value==='follow')setFollowStartingAngle();
-    else if(els.cameraPreset.value!=='free')applyCameraPreset();
-  });
+  els.cameraPreset.addEventListener('change',globeCamera.handlePresetChange);
 
-  canvas.addEventListener('pointerdown',e=>{
-    const keepCenteredFollow=els.cameraPreset.value==='follow';
-    state.pointer.down=true;state.pointer.x=e.clientX;state.pointer.y=e.clientY;canvas.setPointerCapture(e.pointerId);
-    if(!keepCenteredFollow)els.cameraPreset.value='free';
-  });
-  canvas.addEventListener('pointermove',e=>{
-    if(!state.pointer.down)return;
-    const dx=e.clientX-state.pointer.x,dy=e.clientY-state.pointer.y;
-    state.pointer.x=e.clientX;state.pointer.y=e.clientY;
-
-    // Globe drag directions matched to the user's expected camera interaction.
-    // Horizontal remains unbounded; vertical still stops at the geographic poles.
-    state.camera.yaw+=dx*.008;
-    state.camera.pitch=Math.max(MIN_GLOBE_PITCH,Math.min(MAX_GLOBE_PITCH,state.camera.pitch+dy*.008));
-  });
-  canvas.addEventListener('pointerup',()=>state.pointer.down=false);
-  canvas.addEventListener('pointercancel',()=>state.pointer.down=false);
-  canvas.addEventListener('wheel',e=>{e.preventDefault();state.camera.zoom=Math.max(.35,Math.min(4,state.camera.zoom*Math.exp(-e.deltaY*.0012)));},{passive:false});
+  globeCamera.bindInteractions();
   window.addEventListener('resize',render);
 
   configureMode('earth');
