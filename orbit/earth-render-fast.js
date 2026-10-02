@@ -42,26 +42,34 @@
       vec2 q = p / SURFACE_RADIUS;
       float rr = dot(q, q);
 
-      // Thin, view-dependent atmosphere outside the physical sphere.
-      // A narrow bright limb sits at the horizon, with a much fainter haze that
-      // falls away exponentially.  The night side keeps only a trace of scatter.
+      // Atmospheric scattering outside the solid sphere.  At orbital scale
+      // Earth's visible atmosphere is only a very thin layer, so keep the shell
+      // close to the limb and let density fall rapidly with apparent altitude.
       if (rr > 1.0) {
         float radial = sqrt(rr);
-        if (radial > 1.060) discard;
+        if (radial > 1.024) discard;
 
-        float height = (radial - 1.0) / 0.060;
+        float height = (radial - 1.0) / 0.024;
         vec3 sunDir = normalize(vec3(-0.55, 0.33, 0.77));
-        vec3 tangentNormal = normalize(vec3(q.x, q.y, 0.025));
-        float sunFacing = smoothstep(-0.28, 0.22, dot(tangentNormal, sunDir));
 
-        float tightRim = exp(-height * 15.0);
-        float outerHaze = exp(-height * 4.6) * (1.0 - smoothstep(0.72, 1.0, height));
-        float lighting = mix(0.13, 1.0, sunFacing);
-        float alpha = (0.23 * tightRim + 0.075 * outerHaze) * lighting;
+        // Approximate the tangent point for this view ray.  This makes the
+        // sunward limb noticeably brighter while the night limb nearly vanishes.
+        vec3 tangentNormal = normalize(vec3(q.x, q.y, 0.012));
+        float sunFacing = smoothstep(-0.18, 0.30, dot(tangentNormal, sunDir));
 
-        vec3 horizonBlue = vec3(0.28, 0.68, 1.0);
-        vec3 highBlue = vec3(0.10, 0.34, 0.88);
-        vec3 atmosphereColor = mix(horizonBlue, highBlue, smoothstep(0.0, 0.85, height));
+        float horizonRim = exp(-height * 23.0);
+        float highHaze = exp(-height * 6.2) * (1.0 - smoothstep(0.62, 1.0, height));
+        float lighting = mix(0.035, 1.0, sunFacing);
+        float alpha = (0.115 * horizonRim + 0.040 * highHaze) * lighting;
+
+        // Near the dense horizon the scattered light trends toward pale cyan;
+        // higher, thinner air shifts toward a deeper Rayleigh blue.
+        vec3 horizonBlue = vec3(0.52, 0.78, 1.00);
+        vec3 highBlue = vec3(0.18, 0.42, 0.82);
+        vec3 atmosphereColor = mix(horizonBlue, highBlue, smoothstep(0.05, 0.90, height));
+
+        // Soften the very outer edge rather than ending on a visible contour.
+        alpha *= 1.0 - smoothstep(0.72, 1.0, height);
         gl_FragColor = vec4(atmosphereColor, alpha);
         return;
       }
@@ -100,12 +108,12 @@
       float specular = pow(max(dot(normalCam, halfVector), 0.0), 48.0) * ocean * daylight;
       color += vec3(0.42, 0.62, 0.76) * specular * 0.42;
 
-      // Atmospheric scattering seen through the tangent path at the horizon.
-      // Keep it narrow so the atmosphere reads as a thin layer instead of a ring.
-      float limb = pow(1.0 - z, 5.2);
-      float horizonLight = mix(0.10, 1.0, daylight);
-      vec3 limbColor = mix(vec3(0.07, 0.24, 0.58), vec3(0.22, 0.62, 0.96), daylight);
-      color += limbColor * limb * 0.34 * horizonLight;
+      // A narrow in-atmosphere horizon contribution ties the outer haze to
+      // the surface without painting a bright blue band around the whole globe.
+      float limb = pow(1.0 - z, 8.0);
+      float horizonLight = mix(0.035, 1.0, daylight);
+      vec3 limbColor = mix(vec3(0.04, 0.13, 0.34), vec3(0.36, 0.68, 0.96), daylight);
+      color += limbColor * limb * 0.17 * horizonLight;
 
       gl_FragColor = vec4(color, 1.0);
     }
@@ -245,8 +253,8 @@
 
     let renderSize = 0;
     function ensureSize(radius) {
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-      const desired = Math.max(192, Math.min(512, Math.ceil(radius * 2.36 * dpr / 64) * 64));
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+      const desired = Math.max(192, Math.min(768, Math.ceil(radius * 2.36 * dpr / 64) * 64));
       if (desired === renderSize) return;
       renderSize = desired;
       globeCanvas.width = desired;
