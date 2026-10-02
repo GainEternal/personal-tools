@@ -48,8 +48,8 @@
       vec3 lightDir = normalize(vec3(-0.35, 0.72, 0.78));
       float diffuse = max(dot(n, lightDir), 0.0);
       float rim = pow(1.0 - abs(n.z), 2.0);
-      vec3 color = v_color * (0.62 + 0.72 * diffuse) + vec3(0.14, 0.18, 0.22) * rim * 0.18;
-      color = min(color * 1.06, vec3(1.0));
+      vec3 color = v_color * (0.72 + 0.70 * diffuse) + vec3(0.16, 0.20, 0.24) * rim * 0.20;
+      color = min(color * 1.08, vec3(1.0));
       gl_FragColor = vec4(color, 1.0);
     }
   `;
@@ -180,4 +180,77 @@
       ctx.restore();
     };
   };
+
+  // Lightweight shaded cone used for velocity/gravity/thrust arrow tips.
+  window.createArrowHeadRenderer3D = function createArrowHeadRenderer3D() {
+    const c=document.createElement('canvas');
+    const size=64;c.width=size;c.height=size;
+    let gl;
+    try { gl=c.getContext('webgl',{alpha:true,antialias:true,depth:true,stencil:false,premultipliedAlpha:true,powerPreference:'low-power'}); }
+    catch (_) {}
+    if(!gl)return null;
+
+    const avs=`
+      attribute vec3 a_position;
+      attribute vec3 a_normal;
+      uniform mat3 u_rotation;
+      varying vec3 v_normal;
+      void main(){
+        vec3 p=u_rotation*a_position;
+        v_normal=normalize(u_rotation*a_normal);
+        gl_Position=vec4(p.xy,p.z*.22,1.0);
+      }
+    `;
+    const afs=`
+      precision mediump float;
+      varying vec3 v_normal;
+      uniform vec3 u_color;
+      void main(){
+        vec3 n=normalize(v_normal);
+        vec3 lightDir=normalize(vec3(-.32,.72,.80));
+        float diffuse=max(dot(n,lightDir),0.0);
+        float rim=pow(1.0-abs(n.z),2.0);
+        vec3 color=u_color*(.58+.62*diffuse)+vec3(.16)*rim*.14;
+        gl_FragColor=vec4(min(color,vec3(1.0)),1.0);
+      }
+    `;
+    let prog;
+    try { prog=program(gl,avs,afs); }
+    catch(e){console.warn('3D arrowhead renderer unavailable:',e);return null;}
+
+    const verts=[];
+    const seg=14,baseX=-.88,r=.34;
+    for(let i=0;i<seg;i++){
+      const a0=Math.PI*2*i/seg,a1=Math.PI*2*(i+1)/seg,am=(a0+a1)/2;
+      const p0=[baseX,Math.cos(a0)*r,Math.sin(a0)*r];
+      const p1=[baseX,Math.cos(a1)*r,Math.sin(a1)*r];
+      const tip=[0,0,0];
+      const n=[.36,Math.cos(am),Math.sin(am)];
+      pushTri(verts,p0,tip,p1,n,[1,1,1]);
+      pushTri(verts,[baseX,0,0],p1,p0,[-1,0,0],[1,1,1]);
+    }
+    const packed=new Float32Array(verts);
+    const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,packed,gl.STATIC_DRAW);
+    const pos=gl.getAttribLocation(prog,'a_position'),norm=gl.getAttribLocation(prog,'a_normal');
+    gl.enableVertexAttribArray(pos);gl.enableVertexAttribArray(norm);
+    gl.vertexAttribPointer(pos,3,gl.FLOAT,false,9*4,0);
+    gl.vertexAttribPointer(norm,3,gl.FLOAT,false,9*4,3*4);
+    const rot=gl.getUniformLocation(prog,'u_rotation'),colorLoc=gl.getUniformLocation(prog,'u_color');
+    gl.viewport(0,0,size,size);gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.CULL_FACE);
+
+    function rgb(hex){
+      const s=(hex||'#ffffff').replace('#','');
+      if(s.length!==6)return [1,1,1];
+      return [parseInt(s.slice(0,2),16)/255,parseInt(s.slice(2,4),16)/255,parseInt(s.slice(4,6),16)/255];
+    }
+    return function drawArrowHead3D(ctx,{x,y,size:drawSize=26,angle=0,tilt=0,color='#ffffff'}){
+      gl.useProgram(prog);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+      gl.uniformMatrix3fv(rot,false,rotationMatrix(angle,tilt,.18));
+      gl.uniform3fv(colorLoc,new Float32Array(rgb(color)));
+      gl.drawArrays(gl.TRIANGLES,0,packed.length/9);
+      const s=Math.max(18,drawSize);
+      ctx.save();ctx.shadowColor=color;ctx.shadowBlur=3;ctx.drawImage(c,x-s/2,y-s/2,s,s);ctx.restore();
+    };
+  };
+
 })();
