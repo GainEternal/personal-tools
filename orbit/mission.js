@@ -3,6 +3,7 @@
   const ctx = canvas.getContext('2d');
   const earthGlobe = window.createEarthGlobeRenderer ? window.createEarthGlobeRenderer() : null;
   const rocket3D = window.createRocketRenderer3D ? window.createRocketRenderer3D() : null;
+  const arrowHead3D = window.createArrowHeadRenderer3D ? window.createArrowHeadRenderer3D() : null;
   const $ = id => document.getElementById(id);
 
   const els = {
@@ -346,9 +347,24 @@
   function drawArrow(from,vector,frame,color,maxPixels=74){
     const m=vec.mag(vector);if(m<1e-9)return;
     const start=project(from,frame),u=vec.scale(vector,1/m),end=project(vec.add(from,vec.scale(u,frame.extent*.15)),frame);
-    let dx=end.x-start.x,dy=end.y-start.y,len=Math.hypot(dx,dy)||1,f=Math.min(1,maxPixels/len);dx*=f;dy*=f;
+    let dx=end.x-start.x,dy=end.y-start.y;
+    const len=Math.hypot(dx,dy)||1,f=Math.min(1,maxPixels/len);
+    dx*=f;dy*=f;
     const ex=start.x+dx,ey=start.y+dy,a=Math.atan2(dy,dx);
-    ctx.save();ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(start.x,start.y);ctx.lineTo(ex,ey);ctx.stroke();ctx.beginPath();ctx.moveTo(ex,ey);ctx.lineTo(ex-9*Math.cos(a-.5),ey-9*Math.sin(a-.5));ctx.lineTo(ex-9*Math.cos(a+.5),ey-9*Math.sin(a+.5));ctx.closePath();ctx.fill();ctx.restore();
+    const dz=((end.depth||0)-(start.depth||0))*frame.scale*f;
+    const tilt=Math.atan2(dz,Math.max(1e-6,Math.hypot(dx,dy)));
+
+    ctx.save();ctx.strokeStyle=color;ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(start.x,start.y);ctx.lineTo(ex,ey);ctx.stroke();ctx.restore();
+
+    if(arrowHead3D){
+      arrowHead3D(ctx,{x:ex,y:ey,size:26,angle:-a,tilt,color});
+    }else{
+      ctx.save();ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(ex,ey);
+      ctx.lineTo(ex-9*Math.cos(a-.5),ey-9*Math.sin(a-.5));
+      ctx.lineTo(ex-9*Math.cos(a+.5),ey-9*Math.sin(a+.5));
+      ctx.closePath();ctx.fill();ctx.restore();
+    }
   }
   function drawRocket(frame){
     const p=project(state.pos,frame);
