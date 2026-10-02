@@ -78,6 +78,25 @@
       return {x:x1, y:cp*y1-sp*z, z:sp*y1+cp*z};
     }
 
+    function isOccludedBySphere(point, sphereCenter, radius) {
+      const relative={
+        x:point.x-sphereCenter.x,
+        y:point.y-sphereCenter.y,
+        z:(point.z||0)-(sphereCenter.z||0)
+      };
+      const q=rotatePoint(relative);
+      const rho2=q.x*q.x+q.y*q.y;
+      const r2=radius*radius;
+
+      // Outside the projected globe: there is no Earth surface on this view ray.
+      if(rho2>=r2)return false;
+
+      // Positive camera-space z is the hemisphere facing the viewer. If the
+      // object lies behind the front surface on this ray, the globe blocks it.
+      const frontSurfaceZ=Math.sqrt(Math.max(0,r2-rho2));
+      return q.z<frontSurfaceZ;
+    }
+
     function bindInteractions() {
       canvas.addEventListener('pointerdown', e => {
         const keepFollow = cameraPreset && cameraPreset.value === 'follow';
@@ -119,6 +138,7 @@
       handlePresetChange,
       cameraCenter,
       rotatePoint,
+      isOccludedBySphere,
       bindInteractions
     };
   }
