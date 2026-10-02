@@ -66,6 +66,7 @@
   const applyCameraPreset=globeCamera.applyPreset;
   const cameraCenter=globeCamera.cameraCenter;
   const rotatePoint=globeCamera.rotatePoint;
+  const orientationBasis=globeCamera.orientationBasis;
   const isOccludedBySphere=globeCamera.isOccludedBySphere;
 
   function targetAltitude(){ return clamp(Number(els.targetAltitude.value)||400,150,2000); }
@@ -367,27 +368,38 @@
   function drawRocket(frame){
     if(rocketOccluded())return;
     const p=project(state.pos,frame);
-    const headingVector=state.thrustMN>.05?state.thrust:state.vel;
-    let tilt=0;
-    if(vec.mag(headingVector)>1e-8){
-      const ahead=project(vec.add(state.pos,vec.scale(vec.unit(headingVector),frame.extent*.06)),frame);
-      const dx=ahead.x-p.x,dy=ahead.y-p.y;
-      const a=Math.atan2(dy,dx);if(Number.isFinite(a))state.lastRocketAngle=a;
-      const dz=((ahead.depth||0)-(p.depth||0))*frame.scale;
-      tilt=Math.atan2(dz,Math.max(1e-6,Math.hypot(dx,dy)));
+
+    let headingVector;
+    if(state.phase==='prelaunch'||state.phase==='landed'){
+      headingVector=state.pos; // physically upright relative to Earth's surface
+    }else{
+      headingVector=state.thrustMN>.05?state.thrust:state.vel;
     }
+
+    const basis=orientationBasis(headingVector,state.pos);
+    const screenAngle=Math.atan2(-basis[1],basis[0]);
+    if(Number.isFinite(screenAngle))state.lastRocketAngle=screenAngle;
+    const foreshorten=Math.max(.18,Math.hypot(basis[0],basis[1]));
 
     if(state.thrustMN>.05){
       const intensity=clamp(state.thrustMN/8,0.35,1.25),flick=1+.1*Math.sin(state.elapsed*7);
-      const foreshorten=Math.max(.28,Math.cos(tilt));
       ctx.save();ctx.translate(p.x,p.y);ctx.rotate(state.lastRocketAngle);
       const flame=ctx.createLinearGradient(-27*intensity*foreshorten,0,-9,0);
-      flame.addColorStop(0,'rgba(255,70,20,.08)');flame.addColorStop(.45,'#ff7930');flame.addColorStop(1,'#ffe66c');
-      ctx.fillStyle=flame;ctx.beginPath();ctx.moveTo(-10,-3.2);ctx.lineTo(-25*intensity*flick*foreshorten,0);ctx.lineTo(-10,3.2);ctx.closePath();ctx.fill();ctx.restore();
+      flame.addColorStop(0,'rgba(255,70,20,.08)');
+      flame.addColorStop(.45,'#ff7930');
+      flame.addColorStop(1,'#ffe66c');
+      ctx.fillStyle=flame;
+      ctx.beginPath();
+      ctx.moveTo(-10,-3.2);
+      ctx.lineTo(-25*intensity*flick*foreshorten,0);
+      ctx.lineTo(-10,3.2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
     }
 
     if(rocket3D){
-      rocket3D(ctx,{x:p.x,y:p.y,size:46,angle:-state.lastRocketAngle,tilt,roll:.34});
+      rocket3D(ctx,{x:p.x,y:p.y,size:46,basis});
       return;
     }
 
