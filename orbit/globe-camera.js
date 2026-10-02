@@ -78,6 +78,47 @@
       return {x:x1, y:cp*y1-sp*z, z:sp*y1+cp*z};
     }
 
+    function orientationBasis(forwardWorld, upReferenceWorld) {
+      const forward=unit(forwardWorld);
+      const ref=unit(upReferenceWorld);
+
+      const dot=(a,b)=>a.x*b.x+a.y*b.y+(a.z||0)*(b.z||0);
+      const mag=a=>Math.hypot(a.x,a.y,a.z||0);
+      const scale=(a,s)=>({x:a.x*s,y:a.y*s,z:(a.z||0)*s});
+      const sub=(a,b)=>({x:a.x-b.x,y:a.y-b.y,z:(a.z||0)-(b.z||0)});
+      const cross=(a,b)=>({
+        x:a.y*(b.z||0)-(a.z||0)*b.y,
+        y:(a.z||0)*b.x-a.x*(b.z||0),
+        z:a.x*b.y-a.y*b.x
+      });
+
+      // Use the local radial direction as the rocket's roll reference.  When
+      // thrust is nearly radial (launch/landing), fall back to geographic north
+      // so the basis remains well-defined and stable.
+      let upRaw=sub(ref,scale(forward,dot(ref,forward)));
+      if(mag(upRaw)<0.08){
+        const north={x:0,y:0,z:1};
+        upRaw=sub(north,scale(forward,dot(north,forward)));
+      }
+      if(mag(upRaw)<0.08){
+        const fallback={x:0,y:1,z:0};
+        upRaw=sub(fallback,scale(forward,dot(fallback,forward)));
+      }
+
+      const up=unit(upRaw);
+      const side=unit(cross(up,forward));
+      const fCam=rotatePoint(forward);
+      const sCam=rotatePoint(side);
+      const uCam=rotatePoint(up);
+
+      // Column-major mat3: local +X=forward, +Y=side, +Z=up.
+      return new Float32Array([
+        fCam.x,fCam.y,fCam.z,
+        sCam.x,sCam.y,sCam.z,
+        uCam.x,uCam.y,uCam.z
+      ]);
+    }
+
     function isOccludedBySphere(point, sphereCenter, radius) {
       const relative={
         x:point.x-sphereCenter.x,
@@ -138,6 +179,7 @@
       handlePresetChange,
       cameraCenter,
       rotatePoint,
+      orientationBasis,
       isOccludedBySphere,
       bindInteractions
     };
