@@ -48,7 +48,8 @@
       vec3 lightDir = normalize(vec3(-0.35, 0.72, 0.78));
       float diffuse = max(dot(n, lightDir), 0.0);
       float rim = pow(1.0 - abs(n.z), 2.0);
-      vec3 color = v_color * (0.46 + 0.62 * diffuse) + vec3(0.10, 0.14, 0.18) * rim * 0.16;
+      vec3 color = v_color * (0.62 + 0.72 * diffuse) + vec3(0.14, 0.18, 0.22) * rim * 0.18;
+      color = min(color * 1.06, vec3(1.0));
       gl_FragColor = vec4(color, 1.0);
     }
   `;
