@@ -66,6 +66,7 @@
   const applyCameraPreset=globeCamera.applyPreset;
   const cameraCenter=globeCamera.cameraCenter;
   const rotatePoint=globeCamera.rotatePoint;
+  const isOccludedBySphere=globeCamera.isOccludedBySphere;
 
   function targetAltitude(){ return clamp(Number(els.targetAltitude.value)||400,150,2000); }
   function targetOrbits(){ return clamp(Math.round(Number(els.orbitCount.value)||2),1,5); }
@@ -360,7 +361,11 @@
       ctx.closePath();ctx.fill();ctx.restore();
     }
   }
+  function rocketOccluded(){
+    return isOccludedBySphere(state.pos,{x:0,y:0,z:0},R);
+  }
   function drawRocket(frame){
+    if(rocketOccluded())return;
     const p=project(state.pos,frame);
     const headingVector=state.thrustMN>.05?state.thrust:state.vel;
     let tilt=0;
@@ -402,9 +407,10 @@
     drawStars(frame);drawTargetOrbit(frame);
     if(els.showTrail.checked)drawPath(state.trail,frame,'rgba(157,240,208,.74)',2);
     drawEarth(frame);drawRocket(frame);
-    if(els.showVelocity.checked)drawArrow(state.pos,state.vel,frame,'#9df0d0');
-    if(els.showGravity.checked)drawArrow(state.pos,gravity(state.pos),frame,'#ffae7c');
-    if(els.showThrust.checked&&state.thrustMN>.05)drawArrow(state.pos,state.thrust,frame,'#ffd86b');
+    const hiddenByEarth=rocketOccluded();
+    if(!hiddenByEarth&&els.showVelocity.checked)drawArrow(state.pos,state.vel,frame,'#9df0d0');
+    if(!hiddenByEarth&&els.showGravity.checked)drawArrow(state.pos,gravity(state.pos),frame,'#ffae7c');
+    if(!hiddenByEarth&&els.showThrust.checked&&state.thrustMN>.05)drawArrow(state.pos,state.thrust,frame,'#ffd86b');
   }
 
   function simulationStep(realDt){
