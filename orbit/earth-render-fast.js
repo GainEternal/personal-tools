@@ -42,34 +42,42 @@
       vec2 q = p / SURFACE_RADIUS;
       float rr = dot(q, q);
 
-      // Atmospheric scattering outside the solid sphere.  At orbital scale
-      // Earth's visible atmosphere is only a very thin layer, so keep the shell
-      // close to the limb and let density fall rapidly with apparent altitude.
+      // Physically-inspired single-scattering approximation for the limb.
+      // The visible brightness is driven by the atmospheric column along the
+      // view ray: long near the horizon, rapidly falling with tangent altitude.
       if (rr > 1.0) {
+        const float ATMOSPHERE_RADIUS = 1.018;
+        const float SCALE_HEIGHT = 0.0038;
+
         float radial = sqrt(rr);
-        if (radial > 1.024) discard;
+        if (radial >= ATMOSPHERE_RADIUS) discard;
 
-        float height = (radial - 1.0) / 0.024;
         vec3 sunDir = normalize(vec3(-0.55, 0.33, 0.77));
+        vec3 tangentNormal = normalize(vec3(q.x, q.y, 0.0));
+        float sunMu = dot(tangentNormal, sunDir);
 
-        // Approximate the tangent point for this view ray.  This makes the
-        // sunward limb noticeably brighter while the night limb nearly vanishes.
-        vec3 tangentNormal = normalize(vec3(q.x, q.y, 0.012));
-        float sunFacing = smoothstep(-0.18, 0.30, dot(tangentNormal, sunDir));
+        // High atmosphere remains sunlit a little past the geometric terminator,
+        // but the true night-side limb should be almost invisible.
+        float sunVisibility = smoothstep(-0.12, 0.18, sunMu);
+        float illumination = mix(0.012, 1.0, sunVisibility);
 
-        float horizonRim = exp(-height * 23.0);
-        float highHaze = exp(-height * 6.2) * (1.0 - smoothstep(0.62, 1.0, height));
-        float lighting = mix(0.035, 1.0, sunFacing);
-        float alpha = (0.115 * horizonRim + 0.040 * highHaze) * lighting;
+        float tangentHeight = max(0.0, radial - 1.0);
+        float density = exp(-tangentHeight / SCALE_HEIGHT);
 
-        // Near the dense horizon the scattered light trends toward pale cyan;
-        // higher, thinner air shifts toward a deeper Rayleigh blue.
-        vec3 horizonBlue = vec3(0.52, 0.78, 1.00);
-        vec3 highBlue = vec3(0.18, 0.42, 0.82);
-        vec3 atmosphereColor = mix(horizonBlue, highBlue, smoothstep(0.05, 0.90, height));
+        // Chord length through the spherical atmosphere.  Combined with the
+        // exponential density this naturally creates the thin bright limb.
+        float halfChord = sqrt(max(0.0, ATMOSPHERE_RADIUS * ATMOSPHERE_RADIUS - rr));
+        float normalizedChord = halfChord / 0.190;
+        float opticalColumn = density * normalizedChord;
 
-        // Soften the very outer edge rather than ending on a visible contour.
-        alpha *= 1.0 - smoothstep(0.72, 1.0, height);
+        // Beer-Lambert style conversion from optical column to visible scatter.
+        float alpha = (1.0 - exp(-opticalColumn * 0.36)) * illumination;
+
+        // Dense tangent paths appear paler/cyan; tenuous high air is a deeper blue.
+        vec3 highAir = vec3(0.20, 0.43, 0.82);
+        vec3 denseAir = vec3(0.55, 0.78, 1.00);
+        vec3 atmosphereColor = mix(highAir, denseAir, smoothstep(0.04, 0.72, opticalColumn));
+
         gl_FragColor = vec4(atmosphereColor, alpha);
         return;
       }
@@ -108,12 +116,16 @@
       float specular = pow(max(dot(normalCam, halfVector), 0.0), 48.0) * ocean * daylight;
       color += vec3(0.42, 0.62, 0.76) * specular * 0.42;
 
-      // A narrow in-atmosphere horizon contribution ties the outer haze to
-      // the surface without painting a bright blue band around the whole globe.
-      float limb = pow(1.0 - z, 8.0);
-      float horizonLight = mix(0.035, 1.0, daylight);
-      vec3 limbColor = mix(vec3(0.04, 0.13, 0.34), vec3(0.36, 0.68, 0.96), daylight);
-      color += limbColor * limb * 0.17 * horizonLight;
+      // Surface-view atmospheric path.  As the view approaches the horizon,
+      // the slant path through air grows; attenuate the surface slightly and add
+      // a modest amount of in-scattered daylight instead of painting a blue rim.
+      float airmass = 1.0 / max(z, 0.075);
+      float surfaceOpticalDepth = 0.018 * airmass;
+      float transmittance = exp(-surfaceOpticalDepth);
+      float inScatter = (1.0 - transmittance) * daylight;
+      vec3 hazeColor = vec3(0.38, 0.62, 0.90);
+      color *= mix(1.0, transmittance, 0.34);
+      color += hazeColor * inScatter * 0.30;
 
       gl_FragColor = vec4(color, 1.0);
     }
@@ -198,7 +210,9 @@
         antialias: false,
         depth: false,
         stencil: false,
-        premultipliedAlpha: true,
+        // Atmosphere fragments are authored as straight (non-premultiplied) RGBA.
+        // Let the browser perform the conversion when this canvas is composited.
+        premultipliedAlpha: false,
         preserveDrawingBuffer: false,
         powerPreference: 'low-power'
       });
