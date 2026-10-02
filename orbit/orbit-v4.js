@@ -70,6 +70,7 @@
   const applyCameraPreset=globeCamera.applyPreset;
   const cameraCenter=globeCamera.cameraCenter;
   const rotatePoint=globeCamera.rotatePoint;
+  const isOccludedBySphere=globeCamera.isOccludedBySphere;
 
   const body=()=>BODIES[state.bodyKey];
   const mu=()=>body().mu*Number(els.gravity.value);
@@ -303,8 +304,11 @@
     ctx.fillStyle='#e44b50';ctx.beginPath();ctx.moveTo(12,0);ctx.quadraticCurveTo(9,-3.4,6.8,-4.3);ctx.lineTo(6.8,4.3);ctx.quadraticCurveTo(9,3.4,12,0);ctx.closePath();ctx.fill();
     ctx.fillStyle='#56b9e9';ctx.strokeStyle='#d7f4ff';ctx.beginPath();ctx.arc(1.8,0,2.35,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore();
   }
+  function objectOccluded(){
+    return state.bodyKey==='earth' && isOccludedBySphere(state.pos,{x:0,y:0,z:0},body().radius);
+  }
   function drawObject(frame){
-    if(state.crashed)return;
+    if(state.crashed||objectOccluded())return;
     const p=project(state.pos,frame);els.orbitObject.value==='rocket'?drawRocket(frame,p):drawMarker(p);
   }
   function triggerImpact(hitPos,hitVel){
@@ -329,8 +333,9 @@
     if(els.showPrediction.checked&&!state.crashed)drawPath(state.prediction,frame,'rgba(131,182,255,.48)',1.5,[7,7]);
     if(els.showTrail.checked)drawPath(state.trail,frame,'rgba(157,240,208,.72)',2);
     drawBody(frame);drawObject(frame);
-    if(!state.crashed&&els.showVelocity.checked)drawArrow(state.pos,state.vel,frame,'#9df0d0');
-    if(!state.crashed&&els.showGravity.checked)drawArrow(state.pos,acceleration(state.pos),frame,'#ffae7c');
+    const hiddenByBody=objectOccluded();
+    if(!state.crashed&&!hiddenByBody&&els.showVelocity.checked)drawArrow(state.pos,state.vel,frame,'#9df0d0');
+    if(!state.crashed&&!hiddenByBody&&els.showGravity.checked)drawArrow(state.pos,acceleration(state.pos),frame,'#ffae7c');
     drawExplosion(frame);
   }
 
