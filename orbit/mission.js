@@ -21,10 +21,6 @@
   const EARTH_ROTATION_SPEED = 0.4651;
   const REFERENCE_MASS_KG = 250000;
   const G0 = 9.80665;
-  const HOME_YAW = -Math.PI/2;
-  const HOME_PITCH = -Math.PI/2;
-  const MIN_GLOBE_PITCH = -Math.PI;
-  const MAX_GLOBE_PITCH = 0;
 
   const vec = {
     add:(a,b)=>({x:a.x+b.x,y:a.y+b.y,z:(a.z||0)+(b.z||0)}),
@@ -36,6 +32,7 @@
   };
   const clamp = (x,a,b) => Math.max(a,Math.min(b,x));
   const smoothstep = t => {t=clamp(t,0,1); return t*t*(3-2*t);};
+
 
   const state = {
     pos:{x:R+.001,y:0,z:0},
@@ -52,9 +49,23 @@
     landed:false,
     lastFrame:performance.now(),
     lastRocketAngle:-Math.PI/2,
-    camera:{yaw:HOME_YAW,pitch:HOME_PITCH,zoom:1},
+    camera:{yaw:window.OrbitGlobeCamera.HOME_YAW,pitch:window.OrbitGlobeCamera.HOME_PITCH,zoom:1},
     pointer:{down:false,x:0,y:0}
   };
+
+  const globeCamera=window.OrbitGlobeCamera.create({
+    canvas,
+    state,
+    cameraPreset:els.cameraPreset,
+    getObjectPosition:()=>state.pos,
+    homePreset:'free',
+    homeAliases:['overview']
+  });
+  const homeCamera=globeCamera.home;
+  const setFollowStartingAngle=globeCamera.setFollowStartingAngle;
+  const applyCameraPreset=globeCamera.applyPreset;
+  const cameraCenter=globeCamera.cameraCenter;
+  const rotatePoint=globeCamera.rotatePoint;
 
   function targetAltitude(){ return clamp(Number(els.targetAltitude.value)||400,150,2000); }
   function targetOrbits(){ return clamp(Math.round(Number(els.orbitCount.value)||2),1,5); }
@@ -284,45 +295,6 @@
     updateProgressBar();
   }
 
-  function homeCamera(){
-    state.camera={yaw:HOME_YAW,pitch:HOME_PITCH,zoom:1};
-    els.cameraPreset.value='overview';
-  }
-  function cameraForSubpoint(direction){
-    const u=vec.unit(direction);
-    const lon=Math.atan2(u.y,u.x);
-    const lat=Math.asin(Math.max(-1,Math.min(1,u.z||0)));
-    return {yaw:lon-Math.PI/2,pitch:lat-Math.PI/2};
-  }
-  function setFollowStartingAngle(){
-    const back=vec.scale(state.pos,-1);
-    const camera=cameraForSubpoint(back);
-    state.camera.yaw=camera.yaw;
-    state.camera.pitch=camera.pitch;
-  }
-  function applyCameraPreset(){
-    const mode=els.cameraPreset.value;
-    if(mode==='top'){
-      state.camera.yaw=HOME_YAW;
-      state.camera.pitch=0;
-    }else if(mode==='side'){
-      state.camera.yaw=HOME_YAW;
-      state.camera.pitch=HOME_PITCH;
-    }else if(mode==='overview'){
-      state.camera.yaw=HOME_YAW;
-      state.camera.pitch=HOME_PITCH;
-    }else if(mode==='track'){
-      const camera=cameraForSubpoint(state.pos);
-      state.camera.yaw=camera.yaw;
-      state.camera.pitch=camera.pitch;
-    }
-  }
-  function cameraCenter(){ return els.cameraPreset.value==='follow'?state.pos:{x:0,y:0,z:0}; }
-  function rotatePoint(p){
-    const cy=Math.cos(state.camera.yaw),sy=Math.sin(state.camera.yaw),cp=Math.cos(state.camera.pitch),sp=Math.sin(state.camera.pitch);
-    const x1=cy*p.x-sy*p.y,y1=sy*p.x+cy*p.y;
-    return {x:x1,y:cp*y1-sp*(p.z||0),z:sp*y1+cp*(p.z||0)};
-  }
   function resizeCanvas(){
     const rect=canvas.getBoundingClientRect(),dpr=Math.min(window.devicePixelRatio||1,2);
     const w=Math.max(1,Math.round(rect.width*dpr)),h=Math.max(1,Math.round(rect.height*dpr));
@@ -467,29 +439,9 @@
   els.homeCamera.addEventListener('click',homeCamera);
   [els.targetAltitude,els.orbitCount].forEach(input=>input.addEventListener('change',()=>{if(state.phase==='prelaunch'||state.phase==='landed')resetMission();}));
   els.simSpeed.addEventListener('input',()=>{els.simSpeedOut.textContent=`${Number(els.simSpeed.value).toFixed(2).replace(/\.00$/,'')}×`;});
-  els.cameraPreset.addEventListener('change',()=>{
-    if(els.cameraPreset.value==='follow')setFollowStartingAngle();
-    else if(els.cameraPreset.value!=='free')applyCameraPreset();
-  });
+  els.cameraPreset.addEventListener('change',globeCamera.handlePresetChange);
 
-  canvas.addEventListener('pointerdown',e=>{
-    const keepFollow=els.cameraPreset.value==='follow';
-    state.pointer.down=true;state.pointer.x=e.clientX;state.pointer.y=e.clientY;canvas.setPointerCapture(e.pointerId);
-    if(!keepFollow)els.cameraPreset.value='free';
-  });
-  canvas.addEventListener('pointermove',e=>{
-    if(!state.pointer.down)return;
-    const dx=e.clientX-state.pointer.x,dy=e.clientY-state.pointer.y;
-    state.pointer.x=e.clientX;state.pointer.y=e.clientY;
-
-    // Same globe-relative drag model as the orbit sandbox.
-    // Longitude is unbounded; latitude stops naturally at the poles.
-    state.camera.yaw+=dx*.008;
-    state.camera.pitch=Math.max(MIN_GLOBE_PITCH,Math.min(MAX_GLOBE_PITCH,state.camera.pitch+dy*.008));
-  });
-  canvas.addEventListener('pointerup',()=>state.pointer.down=false);
-  canvas.addEventListener('pointercancel',()=>state.pointer.down=false);
-  canvas.addEventListener('wheel',e=>{e.preventDefault();state.camera.zoom=clamp(state.camera.zoom*Math.exp(-e.deltaY*.0012),.35,4);},{passive:false});
+  globeCamera.bindInteractions();
   window.addEventListener('resize',render);
 
   resetMission();
