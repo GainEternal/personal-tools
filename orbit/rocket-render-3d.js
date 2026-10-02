@@ -45,7 +45,9 @@
     varying vec3 v_viewPos;
     void main() {
       vec3 n = normalize(v_normal);
-      vec3 lightDir = normalize(vec3(-0.35, 0.72, 0.78));
+      // Match the Earth renderer's view-space sun direction so both objects
+      // read as occupants of the same lit scene.
+      vec3 lightDir = normalize(vec3(-0.55, 0.33, 0.77));
       float diffuse = max(dot(n, lightDir), 0.0);
       float rim = pow(1.0 - abs(n.z), 2.0);
       vec3 color = v_color * (0.78 + 0.68 * diffuse) + vec3(0.17, 0.21, 0.25) * rim * 0.20;
@@ -155,11 +157,17 @@
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.CULL_FACE);
 
-    return function drawRocket3D(ctx,{x,y,size:drawSize=38,angle=0,tilt=0,roll=.34}) {
+    return function drawRocket3D(ctx,{x,y,size:drawSize=38,angle=0,tilt=0,roll=.34,basis=null}) {
       gl.useProgram(prog);
       gl.clearColor(0,0,0,0);
       gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-      gl.uniformMatrix3fv(rot,false,rotationMatrix(angle,tilt,roll));
+
+      // Prefer a full camera-space basis supplied by the shared globe camera.
+      // angle/tilt remains only as a compatibility fallback.
+      const modelRotation = basis && basis.length===9
+        ? basis
+        : rotationMatrix(angle,tilt,roll);
+      gl.uniformMatrix3fv(rot,false,modelRotation);
       gl.drawArrays(gl.TRIANGLES,0,geo.length/9);
       const s=Math.max(22,drawSize);
 
