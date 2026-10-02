@@ -2,6 +2,7 @@
   const canvas = document.getElementById('orbitCanvas');
   const ctx = canvas.getContext('2d');
   const earthGlobe = window.createEarthGlobeRenderer ? window.createEarthGlobeRenderer() : null;
+  const rocket3D = window.createRocketRenderer3D ? window.createRocketRenderer3D() : null;
 
   const $ = id => document.getElementById(id);
   const els = {
@@ -286,16 +287,33 @@
   function drawMarker(p){ctx.save();ctx.shadowColor='rgba(157,240,208,.75)';ctx.shadowBlur=12;ctx.fillStyle='#d9fff1';ctx.beginPath();ctx.arc(p.x,p.y,5,0,Math.PI*2);ctx.fill();ctx.restore();}
   function drawRocket(frame,p){
     const speed=vec.mag(state.vel);
+    let tilt=0;
     if(speed>1e-6){
       const ahead=project(vec.add(state.pos,vec.scale(state.vel,frame.extent*.06/speed)),frame);
-      const a=Math.atan2(ahead.y-p.y,ahead.x-p.x);if(Number.isFinite(a))state.lastRocketAngle=a;
+      const dx=ahead.x-p.x,dy=ahead.y-p.y;
+      const a=Math.atan2(dy,dx);
+      if(Number.isFinite(a))state.lastRocketAngle=a;
+      const dz=((ahead.depth||0)-(p.depth||0))*frame.scale;
+      tilt=Math.atan2(dz,Math.max(1e-6,Math.hypot(dx,dy)));
     }
-    ctx.save();ctx.translate(p.x,p.y);ctx.rotate(state.lastRocketAngle);ctx.shadowColor='rgba(120,195,255,.55)';ctx.shadowBlur=7;
+
+    // Preserve the familiar orange/yellow exhaust as a 2D glow behind the 3D vehicle.
     if(state.playing&&!state.crashed){
-      const flick=1+.12*Math.sin(state.elapsed*4.7),flame=ctx.createLinearGradient(-24,0,-9,0);
+      const foreshorten=Math.max(.28,Math.cos(tilt));
+      const flick=1+.12*Math.sin(state.elapsed*4.7);
+      ctx.save();ctx.translate(p.x,p.y);ctx.rotate(state.lastRocketAngle);
+      const flame=ctx.createLinearGradient(-24*foreshorten,0,-9,0);
       flame.addColorStop(0,'rgba(255,80,30,.1)');flame.addColorStop(.45,'#ff7c31');flame.addColorStop(1,'#ffe56c');
-      ctx.fillStyle=flame;ctx.beginPath();ctx.moveTo(-10,-3);ctx.lineTo(-24*flick,0);ctx.lineTo(-10,3);ctx.closePath();ctx.fill();
+      ctx.fillStyle=flame;ctx.beginPath();ctx.moveTo(-10,-3);ctx.lineTo(-24*flick*foreshorten,0);ctx.lineTo(-10,3);ctx.closePath();ctx.fill();ctx.restore();
     }
+
+    if(rocket3D){
+      rocket3D(ctx,{x:p.x,y:p.y,size:44,angle:-state.lastRocketAngle,tilt,roll:.34});
+      return;
+    }
+
+    // WebGL fallback: retain the previous flat rocket.
+    ctx.save();ctx.translate(p.x,p.y);ctx.rotate(state.lastRocketAngle);ctx.shadowColor='rgba(120,195,255,.55)';ctx.shadowBlur=7;
     ctx.fillStyle='#dc3f46';ctx.beginPath();ctx.moveTo(-8,-5);ctx.lineTo(-13,-10);ctx.lineTo(-12,-3);ctx.closePath();ctx.fill();
     ctx.beginPath();ctx.moveTo(-8,5);ctx.lineTo(-13,10);ctx.lineTo(-12,3);ctx.closePath();ctx.fill();
     ctx.fillStyle='#f1f5f8';ctx.strokeStyle='#a7bbca';ctx.lineWidth=1.1;ctx.beginPath();ctx.moveTo(12,0);ctx.quadraticCurveTo(7,-5.2,-6,-5.2);ctx.lineTo(-10,-3.6);ctx.lineTo(-10,3.6);ctx.lineTo(-6,5.2);ctx.quadraticCurveTo(7,5.2,12,0);ctx.closePath();ctx.fill();ctx.stroke();
