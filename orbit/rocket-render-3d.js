@@ -34,7 +34,7 @@
       v_normal = normalize(u_rotation * a_normal);
       v_color = a_color;
       v_viewPos = p;
-      gl_Position = vec4(p.xy * 0.78, p.z * 0.22, 1.0);
+      gl_Position = vec4(p.xy * 0.78, -p.z * 0.22, 1.0);
     }
   `;
 
@@ -206,7 +206,7 @@
       void main(){
         vec3 p=u_rotation*a_position;
         v_normal=normalize(u_rotation*a_normal);
-        gl_Position=vec4(p.xy,p.z*.22,1.0);
+        gl_Position=vec4(p.xy,-p.z*.22,1.0);
       }
     `;
     const afs=`
